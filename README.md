@@ -87,3 +87,39 @@ export VITE_API_URL="http://localhost:8000"
 ## Quick test
 
 Use `data/sample_feedback.csv` in the UI upload form.
+
+
+## 5) End-to-end demo script (simple + reliable)
+
+This repository includes a single command demo that runs the full pipeline on the example CSV:
+
+- loads `example_data/feedback.csv`
+- runs ingestion
+- runs clustering
+- computes opportunity scores
+- generates one feature recommendation
+- prints everything clearly to the console
+
+### Step-by-step
+
+1. From the repository root, create and activate a virtual environment:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+2. Run the demo script:
+
+```bash
+python e2e_demo.py
+```
+
+### Expected output (high level)
+
+You will see:
+
+- number of feedback records loaded
+- cluster IDs and record IDs per cluster
+- top opportunity scores and summaries
+- one recommended feature with supporting quotes
