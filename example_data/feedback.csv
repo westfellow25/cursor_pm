@@ -1,0 +1,11 @@
+feedback_id,text,source
+f001,The dashboard is slow when loading monthly reports,web
+f002,Export to CSV button is hard to find,mobile
+f003,Love the new layout and cleaner typography,web
+f004,Search misses results when I include punctuation,api
+f005,App crashes when uploading a large image,mobile
+f006,Great onboarding flow and helpful tips,web
+f007,Notifications arrive too late for urgent updates,mobile
+f008,The analytics chart labels overlap on smaller screens,web
+f009,Dark mode looks great but contrast is low in tables,web
+f010,Login occasionally fails with a timeout error,api
