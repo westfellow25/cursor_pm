@@ -166,6 +166,92 @@ def _proposed_solution(theme_label: str, example_signal: str, texts: list[str]) 
     )
 
 
+def _feature_name(theme_label: str) -> str:
+    words = [word.capitalize() for word in _tokenize(theme_label)[:4]]
+    if not words:
+        return "Workflow Experience Upgrade"
+    return f"{' '.join(words)} Improvement"
+
+
+def _target_users(top: dict[str, object], total_records: int) -> str:
+    share = (int(top["frequency"]) / max(1, total_records)) * 100
+    return (
+        f"Active users impacted by cluster {top['cluster_id']} pain points "
+        f"(~{share:.0f}% of sampled feedback), especially users running this workflow weekly."
+    )
+
+
+def _success_metrics(top: dict[str, object]) -> list[str]:
+    base = max(10, int(top["frequency"]) * 2)
+    return [
+        f"Reduce related support tickets by at least {base}% within 30 days of launch.",
+        "Increase successful task completion for this workflow by 20% in product analytics.",
+        "Improve follow-up CSAT sentiment for this pain point by 1 full point.",
+    ]
+
+
+def _risks(top: dict[str, object]) -> list[str]:
+    return [
+        "Scope creep while addressing adjacent complaints from nearby clusters.",
+        "Potential regression in existing workflow steps without careful QA coverage.",
+        f"Adoption risk if solution discoverability does not improve for cluster {top['cluster_id']} users.",
+    ]
+
+
+def _jira_tickets(top: dict[str, object], solution: str) -> list[dict[str, str]]:
+    theme = str(top["theme_label"])
+    return [
+        {
+            "title": f"[Frontend] Improve {theme} workflow UX",
+            "description": (
+                "Implement UI updates for the top opportunity cluster. "
+                f"Align the interface with the proposed solution: {solution}"
+            ),
+            "acceptance": (
+                "Updated UX shipped behind a feature flag, key user flow can be completed in <=3 clicks, "
+                "and empty/error states are handled."
+            ),
+        },
+        {
+            "title": f"[Backend] Support {theme} workflow reliability",
+            "description": (
+                "Implement or optimize backend endpoints/services required by the new workflow. "
+                "Add guardrails and performance improvements tied to top-cluster friction."
+            ),
+            "acceptance": (
+                "API contracts documented, p95 latency meets target, and automated tests cover happy path + failure path."
+            ),
+        },
+        {
+            "title": "[Analytics] Instrument top-cluster success funnel",
+            "description": (
+                "Add event tracking for discovery, workflow completion, and abandonment signals tied to this initiative."
+            ),
+            "acceptance": (
+                "Dashboard shows baseline vs post-release funnel metrics and events are validated in staging."
+            ),
+        },
+        {
+            "title": "[QA] Validate end-to-end behavior for cluster-driven improvements",
+            "description": (
+                "Create QA plan covering regression, edge cases, and accessibility for the updated workflow."
+            ),
+            "acceptance": (
+                "Test plan executed with no Sev-1/Sev-2 defects open and accessibility checks pass for critical screens."
+            ),
+        },
+        {
+            "title": "[Rollout] Launch and monitor cluster-priority feature",
+            "description": (
+                "Plan phased rollout, define go/no-go thresholds, and monitor operational + product KPIs after release."
+            ),
+            "acceptance": (
+                "Rollout plan approved, monitoring alerts configured, and post-launch review completed within 1 week."
+            ),
+        },
+    ]
+
+
 def _cosine_similarity(left: list[float], right: list[float]) -> float:
     dot = sum(a * b for a, b in zip(left, right))
     left_norm = math.sqrt(sum(a * a for a in left))
@@ -446,7 +532,8 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
     print(f"Theme label         : {top['theme_label']}")
     print(f"Problem statement   : {_problem_statement(top['texts'])}")
     print("Proposed solution   :")
-    print(f"  {_proposed_solution(top['theme_label'], top['example_signal'], top['texts'])}")
+    proposed_solution = _proposed_solution(top["theme_label"], top["example_signal"], top["texts"])
+    print(f"  {proposed_solution}")
     print("Why this, why now   :")
     top_frequency_pct = (top["frequency"] / max(1, len(records))) * 100
     print(
@@ -465,6 +552,24 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
     print("  - Which user segment in this cluster should we prioritize for beta testing?")
     print("  - What success threshold (adoption, CSAT, ticket reduction) defines launch readiness?")
     print("  - Are there platform-specific constraints (web/mobile/api) that require phased rollout?")
+
+    print("\n=== PRODUCT SPEC (AUTO-GENERATED) ===")
+    print(f"Feature name        : {_feature_name(top['theme_label'])}")
+    print(f"Problem summary     : {_problem_statement(top['texts'])}")
+    print(f"Target users        : {_target_users(top, len(records))}")
+    print(f"Proposed solution   : {proposed_solution}")
+    print("Success metrics     :")
+    for metric in _success_metrics(top):
+        print(f"  - {metric}")
+    print("Risks               :")
+    for risk in _risks(top):
+        print(f"  - {risk}")
+
+    print("\n=== IMPLEMENTATION BREAKDOWN ===")
+    for ticket in _jira_tickets(top, proposed_solution):
+        print(f"\nTitle               : {ticket['title']}")
+        print(f"Description         : {ticket['description']}")
+        print(f"Acceptance criteria : {ticket['acceptance']}")
 
     print(_divider("5) SUPPORTING EVIDENCE"))
     evidence_pairs = list(zip(top["ids"], top["texts"]))
