@@ -6,6 +6,12 @@ from collections import Counter, defaultdict
 from pathlib import Path
 import math
 import re
+import sys
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
 from feedback_ingestion import HashingEmbedder, KMeansClustering, run_pipeline
 
@@ -264,7 +270,7 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
     csv_path = Path(csv_path)
 
     print("\n" + "=" * 78)
-    print("AI PRODUCT DISCOVERY — STAKEHOLDER DEMO OUTPUT")
+    print("AI PRODUCT DISCOVERY - STAKEHOLDER DEMO OUTPUT")
     print("=" * 78)
 
     print(_divider("1) DATA INGESTION"))
@@ -286,7 +292,7 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
         preview = next((r.text for r in records if r.feedback_id == ids[0]), "")
         cluster_name = "misc/unclustered" if cluster_id == -1 else f"Cluster {cluster_id}"
         coherence = sum(grouped_similarity[cluster_id]) / max(1, len(grouped_similarity[cluster_id]))
-        print(f"\n• {cluster_name}")
+        print(f"\n- {cluster_name}")
         print(f"  - Size            : {len(ids)} items")
         print(f"  - Coherence score : {coherence:.3f}")
         print(f"  - Record IDs      : {', '.join(ids)}")
@@ -345,11 +351,11 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
         impact = _impact_estimate(cluster["opportunity_score"], cluster["frequency"], len(records))
         print(
             f"  {index}. Cluster {cluster['cluster_id']}\n"
-            f"     • Theme label       : {cluster['theme_label']}\n"
-            f"     • Opportunity score : {cluster['opportunity_score']}\n"
-            f"     • Frequency         : {cluster['frequency']} items\n"
-            f"     • Severity          : {cluster['severity']}\n"
-            f"     • Impact estimate   : {impact}"
+            f"     - Theme label       : {cluster['theme_label']}\n"
+            f"     - Opportunity score : {cluster['opportunity_score']}\n"
+            f"     - Frequency         : {cluster['frequency']} items\n"
+            f"     - Severity          : {cluster['severity']}\n"
+            f"     - Impact estimate   : {impact}"
         )
 
     top = ranked_clusters[0]
@@ -398,7 +404,7 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
             for _, feedback_id, quote in candidate_pool[:evidence_count]
         ]
         for feedback_id, quote in selected_evidence:
-            print(f"  ▸ [{feedback_id}] “{quote}”")
+            print(f'  - [{feedback_id}] "{quote}"')
 
     print("\n" + "-" * 78)
     print("Demo complete. This output is formatted for direct stakeholder review.")
