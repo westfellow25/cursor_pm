@@ -115,6 +115,12 @@ source .venv/bin/activate
 python e2e_demo.py
 ```
 
+Windows (PowerShell with Python launcher):
+
+```powershell
+py .\e2e_demo.py
+```
+
 ### Expected output (high level)
 
 You will see:
