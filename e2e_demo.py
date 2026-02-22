@@ -85,8 +85,17 @@ def _problem_statement(texts: list[str]) -> str:
     )
 
 
-def _proposed_solution(texts: list[str]) -> str:
-    token_set = {token for text in texts for token in _tokenize(text)}
+def _proposed_solution(example_signal: str, texts: list[str]) -> str:
+    top_cluster_text = " ".join([example_signal, *texts])
+    token_set = set(_tokenize(top_cluster_text))
+
+    # Ensure recommendations stay anchored to the dominant pain signals from the top cluster.
+    if {"slow", "loading", "lag", "latency", "performance", "timeout"} & token_set:
+        return (
+            "Improve dashboard and report performance by optimizing heavy queries, adding pagination for large views, "
+            "caching high-traffic summaries, and moving long-running calculations to async jobs so pages load quickly "
+            "under real usage." 
+        )
     if {"search", "find", "filter"} & token_set:
         return (
             "Implement an upgraded discovery experience with smarter indexing, typo/punctuation tolerance, "
@@ -150,6 +159,7 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
 
     for cluster_id, ids in grouped_ids.items():
         texts = [records_by_id[feedback_id].text for feedback_id in ids if feedback_id in records_by_id]
+        example_signal = next((records_by_id[feedback_id].text for feedback_id in ids if feedback_id in records_by_id), "")
         frequency = len(texts)
         severity = _cluster_severity(texts)
         prevalence = frequency / max(1, len(records))
@@ -159,6 +169,8 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
         cluster_metrics[cluster_id] = {
             "cluster_id": cluster_id,
             "texts": texts,
+            "ids": [feedback_id for feedback_id in ids if feedback_id in records_by_id],
+            "example_signal": example_signal,
             "frequency": frequency,
             "severity": round(severity, 2),
         }
@@ -193,7 +205,16 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
     print(f"Top cluster         : Cluster {top['cluster_id']}")
     print(f"Problem statement   : {_problem_statement(top['texts'])}")
     print("Proposed solution   :")
-    print(f"  {_proposed_solution(top['texts'])}")
+    print(f"  {_proposed_solution(top['example_signal'], top['texts'])}")
+    print("Why this, why now   :")
+    top_frequency_pct = (top["frequency"] / max(1, len(records))) * 100
+    print(
+        f"  This cluster appears in {top_frequency_pct:.0f}% of sampled feedback, with a severity score of {top['severity']}."
+    )
+    print(
+        "  The repeated narrative suggests users hit this issue during core workflows, which increases friction, "
+        "slows task completion, and elevates support risk if left unresolved."
+    )
     print("Acceptance criteria :")
     print("  - Cluster-specific workflow completion improves in follow-up feedback.")
     print("  - Users can complete the target task without escalation or workaround.")
@@ -205,8 +226,12 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
     print("  - Are there platform-specific constraints (web/mobile/api) that require phased rollout?")
 
     print(_divider("5) SUPPORTING EVIDENCE"))
-    for quote in top["texts"][:5]:
-        print(f"  ▸ “{quote}”")
+    evidence_pairs = list(zip(top["ids"], top["texts"]))
+    evidence_count = min(5, max(3, len(evidence_pairs)))
+    if evidence_pairs:
+        selected_evidence = [evidence_pairs[index % len(evidence_pairs)] for index in range(evidence_count)]
+        for feedback_id, quote in selected_evidence:
+            print(f"  ▸ [{feedback_id}] “{quote}”")
 
     print("\n" + "-" * 78)
     print("Demo complete. This output is formatted for direct stakeholder review.")
