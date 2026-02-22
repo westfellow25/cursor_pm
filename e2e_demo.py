@@ -238,7 +238,7 @@ def _refine_clusters(records, cluster_results):
                 right_vec = vectors[index_by_id[right_id]]
                 pairwise.append(_cosine_similarity(left_vec, right_vec))
         avg_similarity = sum(pairwise) / len(pairwise) if pairwise else 1.0
-        if avg_similarity < 0.5:
+        if len(records) > 15 and avg_similarity < 0.5:
             for feedback_id in feedback_ids:
                 assignments[feedback_id] = next_cluster_id
                 similarity_by_id[feedback_id] = max(similarity_by_id[feedback_id], 0.62)
@@ -255,6 +255,84 @@ def _refine_clusters(records, cluster_results):
             assignments[feedback_id] = next_cluster_id
             similarity_by_id[feedback_id] = max(similarity_by_id[feedback_id], 0.6)
             next_cluster_id += 1
+
+    grouped = defaultdict(list)
+    for feedback_id, cluster_id in assignments.items():
+        grouped[cluster_id].append(feedback_id)
+
+    avg_cluster_size = len(records) / max(1, len(grouped))
+    if avg_cluster_size < 2 and len(records) <= 12:
+        thresholds = [0.72, 0.66, 0.6, 0.54, 0.48]
+        for merge_threshold in thresholds:
+            reassigned = False
+            for feedback_id, cluster_id in list(assignments.items()):
+                if cluster_id != -1 and len(grouped.get(cluster_id, [])) > 1:
+                    continue
+
+                candidate_clusters = [cid for cid, ids in grouped.items() if cid != -1 and len(ids) >= 2]
+                if not candidate_clusters:
+                    continue
+
+                source_vector = vectors[index_by_id[feedback_id]]
+                best_target = None
+                best_similarity = merge_threshold
+                for candidate in candidate_clusters:
+                    sims = [
+                        _cosine_similarity(source_vector, vectors[index_by_id[other_id]])
+                        for other_id in grouped[candidate]
+                    ]
+                    candidate_similarity = sum(sims) / max(1, len(sims))
+                    if candidate_similarity > best_similarity:
+                        best_similarity = candidate_similarity
+                        best_target = candidate
+
+                if best_target is not None:
+                    old_cluster = assignments[feedback_id]
+                    assignments[feedback_id] = best_target
+                    similarity_by_id[feedback_id] = max(similarity_by_id[feedback_id], round(best_similarity, 4))
+                    if old_cluster in grouped and feedback_id in grouped[old_cluster]:
+                        grouped[old_cluster].remove(feedback_id)
+                        if not grouped[old_cluster]:
+                            del grouped[old_cluster]
+                    grouped[best_target].append(feedback_id)
+                    reassigned = True
+
+            avg_cluster_size = len(records) / max(1, len(grouped))
+            if avg_cluster_size >= 2:
+                break
+            if not reassigned:
+                continue
+
+    if len(records) <= 12 and len(grouped) > 5:
+        while len(grouped) > 5:
+            smallest_cluster = min(grouped, key=lambda cid: len(grouped[cid]))
+            source_ids = grouped[smallest_cluster]
+            source_vectors = [vectors[index_by_id[fid]] for fid in source_ids]
+
+            best_target = None
+            best_similarity = -1.0
+            for candidate_cluster, candidate_ids in grouped.items():
+                if candidate_cluster == smallest_cluster:
+                    continue
+                candidate_vectors = [vectors[index_by_id[fid]] for fid in candidate_ids]
+                pair_sims = [
+                    _cosine_similarity(source_vec, candidate_vec)
+                    for source_vec in source_vectors
+                    for candidate_vec in candidate_vectors
+                ]
+                candidate_similarity = sum(pair_sims) / max(1, len(pair_sims))
+                if candidate_similarity > best_similarity:
+                    best_similarity = candidate_similarity
+                    best_target = candidate_cluster
+
+            if best_target is None:
+                break
+
+            for feedback_id in source_ids:
+                assignments[feedback_id] = best_target
+                similarity_by_id[feedback_id] = max(similarity_by_id[feedback_id], round(best_similarity, 4))
+            grouped[best_target].extend(source_ids)
+            del grouped[smallest_cluster]
 
     return [
         type(row)(
@@ -278,6 +356,8 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
     records, cluster_results = run_pipeline(csv_path, n_clusters=n_clusters)
     cluster_results = _refine_clusters(records, cluster_results)
     print(f"Feedback loaded    : {len(records)} records")
+    if len(records) < 8:
+        print("Warning            : Dataset may be too small for strong clustering signal")
 
     print(_divider("2) CLUSTER SNAPSHOT"))
     grouped_ids: dict[int, list[str]] = defaultdict(list)
@@ -287,6 +367,8 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
         grouped_similarity[row.cluster_id].append(row.similarity_to_centroid)
 
     print(f"Clusters generated : {len(grouped_ids)}")
+    avg_cluster_size = (len(cluster_results) / max(1, len(grouped_ids))) if cluster_results else 0.0
+    print(f"Avg cluster size   : {avg_cluster_size:.2f}")
     for cluster_id in sorted(grouped_ids):
         ids = grouped_ids[cluster_id]
         preview = next((r.text for r in records if r.feedback_id == ids[0]), "")

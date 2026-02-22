@@ -124,6 +124,8 @@ class KMeansClustering:
         max_iters: int = 30,
         seed: int = 23,
         similarity_threshold: float = 0.62,
+        threshold_relax_step: float = 0.05,
+        threshold_relax_max_iters: int = 6,
     ) -> None:
         if n_clusters < 1:
             raise ValueError("n_clusters must be >= 1")
@@ -131,6 +133,8 @@ class KMeansClustering:
         self.max_iters = max_iters
         self.seed = seed
         self.similarity_threshold = similarity_threshold
+        self.threshold_relax_step = threshold_relax_step
+        self.threshold_relax_max_iters = threshold_relax_max_iters
 
     def fit_predict(self, vectors: Sequence[Sequence[float]]) -> List[int]:
         assignments, _, _ = self.fit_predict_with_metrics(vectors)
@@ -181,12 +185,46 @@ class KMeansClustering:
             if values
         }
 
-        thresholded_assignments = [
-            cluster_id if similarities[i] >= self.similarity_threshold else -1
+        thresholded_assignments = self._adaptive_threshold_assignments(assignments, similarities)
+
+        return thresholded_assignments, similarities, coherence_by_cluster
+
+    def _adaptive_threshold_assignments(
+        self,
+        assignments: Sequence[int],
+        similarities: Sequence[float],
+    ) -> List[int]:
+        threshold = self.similarity_threshold
+        best_assignments = [
+            cluster_id if similarities[i] >= threshold else -1
             for i, cluster_id in enumerate(assignments)
         ]
 
-        return thresholded_assignments, similarities, coherence_by_cluster
+        for _ in range(self.threshold_relax_max_iters):
+            avg_size, singleton_count = self._cluster_shape(best_assignments)
+            if avg_size >= 2.0 or singleton_count == 0:
+                break
+
+            threshold = max(0.0, threshold - self.threshold_relax_step)
+            best_assignments = [
+                cluster_id if similarities[i] >= threshold else -1
+                for i, cluster_id in enumerate(assignments)
+            ]
+
+        return best_assignments
+
+    def _cluster_shape(self, assignments: Sequence[int]) -> tuple[float, int]:
+        grouped: dict[int, int] = {}
+        for cluster_id in assignments:
+            grouped[cluster_id] = grouped.get(cluster_id, 0) + 1
+
+        if not grouped:
+            return 0.0, 0
+
+        cluster_sizes = list(grouped.values())
+        avg_size = len(assignments) / len(cluster_sizes)
+        singleton_count = sum(1 for size in cluster_sizes if size == 1)
+        return avg_size, singleton_count
 
     def _recompute_centroids(
         self,
@@ -238,6 +276,8 @@ def run_pipeline(csv_path: str | Path, n_clusters: int = 3) -> tuple[List[Feedba
     vectors = embedder.embed([record.text for record in records])
 
     preferred_clusters = max(n_clusters, min(8, math.ceil(math.sqrt(len(records)) * 1.5)))
+    if len(records) <= 12:
+        preferred_clusters = min(preferred_clusters, max(3, len(records) // 2))
     clusterer = KMeansClustering(n_clusters=preferred_clusters)
     assignments, similarities, _ = clusterer.fit_predict_with_metrics(vectors)
 
