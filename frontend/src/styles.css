@@ -1,0 +1,35 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f6f7fb;
+}
+
+.container {
+  max-width: 760px;
+  margin: 2rem auto;
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+form {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+button {
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+}
+
+.error {
+  color: #b91c1c;
+}
+
+li {
+  margin-bottom: 0.9rem;
+}
