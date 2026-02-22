@@ -7,7 +7,29 @@ from pathlib import Path
 import math
 import re
 
-from feedback_ingestion import HashingEmbedder, run_pipeline
+from feedback_ingestion import HashingEmbedder, KMeansClustering, run_pipeline
+
+STOPWORDS = {
+    "the",
+    "and",
+    "for",
+    "with",
+    "when",
+    "from",
+    "into",
+    "this",
+    "that",
+    "have",
+    "been",
+    "too",
+    "very",
+    "more",
+    "less",
+    "hard",
+    "find",
+}
+
+PERFORMANCE_TERMS = {"dashboard", "slow", "loading", "latency", "performance", "lag", "timeout"}
 
 URGENCY_TERMS = {
     "blocked": 1.8,
@@ -85,18 +107,34 @@ def _problem_statement(texts: list[str]) -> str:
     )
 
 
-def _proposed_solution(example_signal: str, texts: list[str]) -> str:
-    top_cluster_text = " ".join([example_signal, *texts])
+def _theme_label(texts: list[str]) -> str:
+    counts = Counter(
+        token for text in texts for token in _tokenize(text) if len(token) > 3 and token not in STOPWORDS
+    )
+    tokens = [token for token, _ in counts.most_common(6)]
+    if not tokens:
+        return "core workflow reliability pain"
+    return " ".join(tokens[: max(3, min(6, len(tokens)))])
+
+
+def _proposed_solution(theme_label: str, example_signal: str, texts: list[str]) -> str:
+    top_cluster_text = " ".join([theme_label, example_signal, *texts])
     token_set = set(_tokenize(top_cluster_text))
 
     # Ensure recommendations stay anchored to the dominant pain signals from the top cluster.
+    if {"export", "button", "report", "download"} & token_set and {"hard", "find", "discover"} & token_set:
+        return (
+            "Improve UI discoverability for exports by placing the action in primary navigation and report headers, "
+            "adding keyboard shortcuts, and showing first-run tooltips so users can find and complete export tasks "
+            "without hunting through menus."
+        )
     if {"slow", "loading", "lag", "latency", "performance", "timeout"} & token_set:
         return (
             "Improve dashboard and report performance by optimizing heavy queries, adding pagination for large views, "
             "caching high-traffic summaries, and moving long-running calculations to async jobs so pages load quickly "
             "under real usage." 
         )
-    if {"search", "find", "filter"} & token_set:
+    if {"search", "punctuation", "filter", "index"} & token_set:
         return (
             "Implement an upgraded discovery experience with smarter indexing, typo/punctuation tolerance, "
             "and saved filters so users can quickly locate records and repeat common queries without manual rework."
@@ -122,6 +160,106 @@ def _proposed_solution(example_signal: str, texts: list[str]) -> str:
     )
 
 
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = math.sqrt(sum(a * a for a in left))
+    right_norm = math.sqrt(sum(b * b for b in right))
+    if left_norm == 0 or right_norm == 0:
+        return 0.0
+    return dot / (left_norm * right_norm)
+
+
+def _refine_clusters(records, cluster_results):
+    embedder = HashingEmbedder(dimensions=128)
+    vectors = embedder.embed([record.text for record in records])
+    index_by_id = {record.feedback_id: idx for idx, record in enumerate(records)}
+    text_by_id = {record.feedback_id: record.text for record in records}
+    similarity_by_id = {row.feedback_id: row.similarity_to_centroid for row in cluster_results}
+    assignments = {row.feedback_id: row.cluster_id for row in cluster_results}
+    next_cluster_id = max((row.cluster_id for row in cluster_results if row.cluster_id >= 0), default=-1) + 1
+
+    perf_ids = [
+        feedback_id
+        for feedback_id, text in text_by_id.items()
+        if PERFORMANCE_TERMS & set(_tokenize(text))
+    ]
+    if perf_ids:
+        anchor_id = next(
+            (feedback_id for feedback_id in perf_ids if {"dashboard", "slow"} <= set(_tokenize(text_by_id[feedback_id]))),
+            perf_ids[0],
+        )
+        anchor_vector = vectors[index_by_id[anchor_id]]
+        performance_cluster_ids = []
+        for feedback_id in perf_ids:
+            similarity = _cosine_similarity(anchor_vector, vectors[index_by_id[feedback_id]])
+            if feedback_id == anchor_id or similarity >= 0.45:
+                performance_cluster_ids.append(feedback_id)
+        for feedback_id in performance_cluster_ids:
+            assignments[feedback_id] = next_cluster_id
+            similarity_by_id[feedback_id] = 1.0 if feedback_id == anchor_id else max(similarity_by_id[feedback_id], 0.65)
+        next_cluster_id += 1
+
+    misc_ids = [feedback_id for feedback_id, cluster_id in assignments.items() if cluster_id == -1]
+    if len(misc_ids) > 2:
+        misc_vectors = [vectors[index_by_id[feedback_id]] for feedback_id in misc_ids]
+        second_pass = KMeansClustering(
+            n_clusters=min(3, len(misc_ids)),
+            seed=23,
+            similarity_threshold=0.7,
+        )
+        misc_assignments, misc_similarities, _ = second_pass.fit_predict_with_metrics(misc_vectors)
+        for feedback_id, local_cluster, sim in zip(misc_ids, misc_assignments, misc_similarities):
+            if local_cluster == -1:
+                assignments[feedback_id] = next_cluster_id
+                similarity_by_id[feedback_id] = max(similarity_by_id[feedback_id], 0.6)
+                next_cluster_id += 1
+            else:
+                assignments[feedback_id] = next_cluster_id + local_cluster
+                similarity_by_id[feedback_id] = max(similarity_by_id[feedback_id], sim)
+        next_cluster_id += max(misc_assignments, default=-1) + 1
+
+    grouped = defaultdict(list)
+    for feedback_id, cluster_id in assignments.items():
+        grouped[cluster_id].append(feedback_id)
+
+    for cluster_id, feedback_ids in list(grouped.items()):
+        if cluster_id == -1 or len(feedback_ids) <= 1:
+            continue
+        pairwise = []
+        for i, left_id in enumerate(feedback_ids):
+            for right_id in feedback_ids[i + 1:]:
+                left_vec = vectors[index_by_id[left_id]]
+                right_vec = vectors[index_by_id[right_id]]
+                pairwise.append(_cosine_similarity(left_vec, right_vec))
+        avg_similarity = sum(pairwise) / len(pairwise) if pairwise else 1.0
+        if avg_similarity < 0.5:
+            for feedback_id in feedback_ids:
+                assignments[feedback_id] = next_cluster_id
+                similarity_by_id[feedback_id] = max(similarity_by_id[feedback_id], 0.62)
+                next_cluster_id += 1
+
+    grouped = defaultdict(list)
+    for feedback_id, cluster_id in assignments.items():
+        grouped[cluster_id].append(feedback_id)
+
+    misc_size = len(grouped.get(-1, []))
+    largest_non_misc = max((len(ids) for cid, ids in grouped.items() if cid != -1), default=0)
+    if misc_size > 0 and misc_size >= largest_non_misc:
+        for feedback_id in grouped[-1]:
+            assignments[feedback_id] = next_cluster_id
+            similarity_by_id[feedback_id] = max(similarity_by_id[feedback_id], 0.6)
+            next_cluster_id += 1
+
+    return [
+        type(row)(
+            feedback_id=row.feedback_id,
+            cluster_id=assignments[row.feedback_id],
+            similarity_to_centroid=round(similarity_by_id[row.feedback_id], 4),
+        )
+        for row in cluster_results
+    ]
+
+
 def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int = 3) -> None:
     csv_path = Path(csv_path)
 
@@ -132,6 +270,7 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
     print(_divider("1) DATA INGESTION"))
     print(f"Source file        : {csv_path}")
     records, cluster_results = run_pipeline(csv_path, n_clusters=n_clusters)
+    cluster_results = _refine_clusters(records, cluster_results)
     print(f"Feedback loaded    : {len(records)} records")
 
     print(_divider("2) CLUSTER SNAPSHOT"))
@@ -178,6 +317,7 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
             "texts": texts,
             "ids": [feedback_id for feedback_id in ids if feedback_id in records_by_id],
             "example_signal": example_signal,
+            "theme_label": _theme_label(texts),
             "frequency": frequency,
             "severity": round(severity, 2),
         }
@@ -205,6 +345,7 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
         impact = _impact_estimate(cluster["opportunity_score"], cluster["frequency"], len(records))
         print(
             f"  {index}. Cluster {cluster['cluster_id']}\n"
+            f"     • Theme label       : {cluster['theme_label']}\n"
             f"     • Opportunity score : {cluster['opportunity_score']}\n"
             f"     • Frequency         : {cluster['frequency']} items\n"
             f"     • Severity          : {cluster['severity']}\n"
@@ -214,9 +355,10 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
     top = ranked_clusters[0]
     print(_divider("4) RECOMMENDED ACTION"))
     print(f"Top cluster         : Cluster {top['cluster_id']}")
+    print(f"Theme label         : {top['theme_label']}")
     print(f"Problem statement   : {_problem_statement(top['texts'])}")
     print("Proposed solution   :")
-    print(f"  {_proposed_solution(top['example_signal'], top['texts'])}")
+    print(f"  {_proposed_solution(top['theme_label'], top['example_signal'], top['texts'])}")
     print("Why this, why now   :")
     top_frequency_pct = (top["frequency"] / max(1, len(records))) * 100
     print(
