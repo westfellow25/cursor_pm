@@ -35,6 +35,18 @@ STOPWORDS = {
     "find",
 }
 
+SENTIMENT_WORDS = {
+    "love",
+    "great",
+    "good",
+    "awesome",
+    "amazing",
+    "nice",
+    "terrible",
+    "awful",
+    "hate",
+}
+
 PERFORMANCE_TERMS = {"dashboard", "slow", "loading", "latency", "performance", "lag", "timeout"}
 
 URGENCY_TERMS = {
@@ -114,13 +126,32 @@ def _problem_statement(texts: list[str]) -> str:
 
 
 def _theme_label(texts: list[str]) -> str:
-    counts = Counter(
-        token for text in texts for token in _tokenize(text) if len(token) > 3 and token not in STOPWORDS
-    )
-    tokens = [token for token, _ in counts.most_common(6)]
-    if not tokens:
-        return "core workflow reliability pain"
-    return " ".join(tokens[: max(3, min(6, len(tokens)))])
+    meaningful_tokens = [
+        token
+        for text in texts
+        for token in _tokenize(text)
+        if len(token) > 2 and token not in STOPWORDS and token not in SENTIMENT_WORDS
+    ]
+    token_set = set(meaningful_tokens)
+    counts = Counter(meaningful_tokens)
+
+    perf_hits = {"slow", "loading", "latency", "lag", "performance", "timeout"} & token_set
+    if ("dashboard" in token_set and perf_hits) or len(perf_hits) >= 2:
+        return "Dashboard performance issues"
+    if {"search", "filter", "find", "index", "query"} & token_set:
+        return "Search and filtering gaps"
+    if {"export", "report", "download", "csv"} & token_set:
+        return "Reporting export workflow friction"
+    if {"integration", "integrations", "sync", "api", "crm"} & token_set:
+        return "Integration sync reliability gaps"
+    if {"permission", "permissions", "access", "role", "approval"} & token_set:
+        return "Access control workflow issues"
+
+    top_keywords = [token for token, _ in counts.most_common(3)]
+    if not top_keywords:
+        return "Core workflow experience issues"
+    label_tokens = [word.capitalize() for word in top_keywords[:2]]
+    return " ".join([*label_tokens, "workflow", "issues"])
 
 
 def _proposed_solution(theme_label: str, example_signal: str, texts: list[str]) -> str:
@@ -167,10 +198,24 @@ def _proposed_solution(theme_label: str, example_signal: str, texts: list[str]) 
 
 
 def _feature_name(theme_label: str) -> str:
-    words = [word.capitalize() for word in _tokenize(theme_label)[:4]]
-    if not words:
-        return "Workflow Experience Upgrade"
-    return f"{' '.join(words)} Improvement"
+    theme_tokens = [token for token in _tokenize(theme_label) if token not in STOPWORDS]
+    token_set = set(theme_tokens)
+
+    if {"dashboard", "performance", "latency", "slow", "loading"} & token_set:
+        return "Speed Up Dashboard Loading"
+    if {"search", "filter", "query", "index"} & token_set:
+        return "Improve Search Accuracy"
+    if {"export", "report", "download", "csv"} & token_set:
+        return "Simplify Report Exports"
+    if {"integration", "integrations", "sync", "api", "crm"} & token_set:
+        return "Automate Integration Sync"
+    if {"permission", "permissions", "access", "role", "approval"} & token_set:
+        return "Strengthen Access Controls"
+
+    leading_terms = [token.capitalize() for token in theme_tokens[:2]]
+    if not leading_terms:
+        return "Improve Core Workflow"
+    return f"Improve {' '.join(leading_terms)} Workflow"
 
 
 def _target_users(top: dict[str, object], total_records: int) -> str:
@@ -259,6 +304,13 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
     if left_norm == 0 or right_norm == 0:
         return 0.0
     return dot / (left_norm * right_norm)
+
+
+def _centroid(vectors: list[list[float]]) -> list[float]:
+    if not vectors:
+        return []
+    dimensions = len(vectors[0])
+    return [sum(vector[idx] for vector in vectors) / len(vectors) for idx in range(dimensions)]
 
 
 def _refine_clusters(records, cluster_results):
@@ -576,20 +628,29 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
     evidence_count = min(5, max(3, len(evidence_pairs)))
     if evidence_pairs:
         embedder = HashingEmbedder(dimensions=128)
-        vectors = embedder.embed([top["example_signal"], *top["texts"]])
-        signal_vector, quote_vectors = vectors[0], vectors[1:]
+        quote_vectors = embedder.embed(top["texts"])
+        centroid = _centroid(quote_vectors)
+        theme_tokens = set(token for token in _tokenize(top["theme_label"]) if token not in STOPWORDS)
         scored_pairs = []
         for (feedback_id, quote), vector in zip(evidence_pairs, quote_vectors):
-            similarity = sum(a * b for a, b in zip(signal_vector, vector))
-            scored_pairs.append((similarity, feedback_id, quote))
+            similarity = _cosine_similarity(centroid, vector)
+            quote_tokens = set(_tokenize(quote))
+            overlap = len(theme_tokens & quote_tokens)
+            if similarity >= 0.62 and overlap >= 1:
+                scored_pairs.append((similarity, feedback_id, quote))
+
+        if len(scored_pairs) < 3:
+            relaxed = []
+            for (feedback_id, quote), vector in zip(evidence_pairs, quote_vectors):
+                similarity = _cosine_similarity(centroid, vector)
+                quote_tokens = set(_tokenize(quote))
+                overlap = len(theme_tokens & quote_tokens)
+                if similarity >= 0.5 and overlap >= 1:
+                    relaxed.append((similarity, feedback_id, quote))
+            scored_pairs = sorted(relaxed, key=lambda item: item[0], reverse=True)
 
         ranked_evidence = sorted(scored_pairs, key=lambda item: item[0], reverse=True)
-        semantically_close = [item for item in ranked_evidence if item[0] >= 0.55]
-        candidate_pool = semantically_close if len(semantically_close) >= 3 else ranked_evidence
-        selected_evidence = [
-            (feedback_id, quote)
-            for _, feedback_id, quote in candidate_pool[:evidence_count]
-        ]
+        selected_evidence = [(feedback_id, quote) for _, feedback_id, quote in ranked_evidence[:evidence_count]]
         for feedback_id, quote in selected_evidence:
             print(f'  - [{feedback_id}] "{quote}"')
 
