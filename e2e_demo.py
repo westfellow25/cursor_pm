@@ -249,22 +249,27 @@ def _jira_tickets(top: dict[str, object], solution: str) -> list[dict[str, str]]
         {
             "title": f"[Frontend] Improve {theme} workflow UX",
             "description": (
-                "Implement UI updates for the top opportunity cluster. "
-                f"Align the interface with the proposed solution: {solution}"
+                "Implement UI updates for the top opportunity cluster, including pagination for large result sets, "
+                "skeleton/loading/empty/error states for each primary view, and client-side caching for repeat visits "
+                "to high-traffic dashboards where data freshness requirements allow. "
+                f"Align interaction details with the proposed solution: {solution}"
             ),
             "acceptance": (
                 "Updated UX shipped behind a feature flag, key user flow can be completed in <=3 clicks, "
-                "and empty/error states are handled."
+                "pagination works for large datasets, and loading/skeleton/empty/error states are fully implemented "
+                "for dashboard and detail views."
             ),
         },
         {
             "title": f"[Backend] Support {theme} workflow reliability",
             "description": (
                 "Implement or optimize backend endpoints/services required by the new workflow. "
-                "Add guardrails and performance improvements tied to top-cluster friction."
+                "Prioritize query optimization, response caching for expensive aggregate reads, and async jobs for "
+                "long-running calculations/exports tied to top-cluster friction."
             ),
             "acceptance": (
-                "API contracts documented, p95 latency meets target, and automated tests cover happy path + failure path."
+                "API contracts documented, p95 latency meets target, query plans reviewed for heavy endpoints, "
+                "cache hit ratio monitored, async jobs idempotent/retriable, and automated tests cover happy path + failure path."
             ),
         },
         {
@@ -596,10 +601,11 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
         "slows task completion, and elevates support risk if left unresolved."
     )
     print("Acceptance criteria :")
-    print("  - Cluster-specific workflow completion improves in follow-up feedback.")
-    print("  - Users can complete the target task without escalation or workaround.")
-    print("  - Support tickets linked to this pain point trend downward after release.")
-    print("  - PM dashboard tracks adoption and reliability for the shipped solution.")
+    print("  - Dashboard page-load p95 improves from <baseline_before_ms> ms to <= <target_after_ms> ms in production.")
+    print("  - Dashboard API p95 latency improves from <baseline_before_ms> ms to <= <target_after_ms> ms for top workflows.")
+    print("  - Users complete the target task without escalation/workaround in >= <target_success_rate>% of sessions.")
+    print("  - Support tickets linked to this pain point decrease by >= <target_ticket_reduction>% vs pre-release baseline.")
+    print("  - PM dashboard tracks baseline vs after-release metrics for load time, API latency, adoption, and reliability.")
     print("Open questions      :")
     print("  - Which user segment in this cluster should we prioritize for beta testing?")
     print("  - What success threshold (adoption, CSAT, ticket reduction) defines launch readiness?")
@@ -625,32 +631,27 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
 
     print(_divider("5) SUPPORTING EVIDENCE"))
     evidence_pairs = list(zip(top["ids"], top["texts"]))
-    evidence_count = min(5, max(3, len(evidence_pairs)))
+    evidence_count = min(5, len(evidence_pairs))
     if evidence_pairs:
         embedder = HashingEmbedder(dimensions=128)
         quote_vectors = embedder.embed(top["texts"])
         centroid = _centroid(quote_vectors)
-        theme_tokens = set(token for token in _tokenize(top["theme_label"]) if token not in STOPWORDS)
+        threshold = 0.62
         scored_pairs = []
         for (feedback_id, quote), vector in zip(evidence_pairs, quote_vectors):
             similarity = _cosine_similarity(centroid, vector)
-            quote_tokens = set(_tokenize(quote))
-            overlap = len(theme_tokens & quote_tokens)
-            if similarity >= 0.62 and overlap >= 1:
-                scored_pairs.append((similarity, feedback_id, quote))
+            scored_pairs.append((similarity, feedback_id, quote))
 
-        if len(scored_pairs) < 3:
-            relaxed = []
-            for (feedback_id, quote), vector in zip(evidence_pairs, quote_vectors):
-                similarity = _cosine_similarity(centroid, vector)
-                quote_tokens = set(_tokenize(quote))
-                overlap = len(theme_tokens & quote_tokens)
-                if similarity >= 0.5 and overlap >= 1:
-                    relaxed.append((similarity, feedback_id, quote))
-            scored_pairs = sorted(relaxed, key=lambda item: item[0], reverse=True)
+        passing = sorted([item for item in scored_pairs if item[0] >= threshold], key=lambda item: item[0], reverse=True)
+        fallback = sorted([item for item in scored_pairs if item[0] < threshold], key=lambda item: item[0], reverse=True)
 
-        ranked_evidence = sorted(scored_pairs, key=lambda item: item[0], reverse=True)
-        selected_evidence = [(feedback_id, quote) for _, feedback_id, quote in ranked_evidence[:evidence_count]]
+        selected = passing[:evidence_count]
+        minimum_quotes = min(3, len(scored_pairs))
+        if len(selected) < minimum_quotes:
+            needed = minimum_quotes - len(selected)
+            selected.extend(fallback[:needed])
+
+        selected_evidence = [(feedback_id, quote) for _, feedback_id, quote in selected]
         for feedback_id, quote in selected_evidence:
             print(f'  - [{feedback_id}] "{quote}"')
 
