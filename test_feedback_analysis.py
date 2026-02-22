@@ -43,31 +43,30 @@ class FeedbackAnalysisTests(unittest.TestCase):
 
 
 class EvidenceSelectionTests(unittest.TestCase):
-    def test_top_cluster_with_three_items_returns_three_quotes_with_fallback(self):
+    def test_select_supporting_evidence_returns_similarity_order(self):
         scored_pairs = [
-            (0.95, True, "f-1", "search is slow"),
-            (0.35, False, "f-2", "dashboard times out"),
-            (0.22, False, "f-3", "api page lags"),
+            (0.95, "f-1", "dashboard loading is slow"),
+            (0.35, "f-2", "dashboard latency is high"),
+            (0.22, "f-3", "report performance is poor"),
         ]
 
         selected = _select_supporting_evidence(scored_pairs, evidence_count=3)
 
         self.assertEqual(len(selected), 3)
-        self.assertEqual(selected[0][0], "f-1")
-        self.assertCountEqual([item[0] for item in selected], ["f-1", "f-2", "f-3"])
+        self.assertEqual([item[0] for item in selected], ["f-1", "f-2", "f-3"])
 
-    def test_when_relevance_pool_has_three_items_only_same_cluster_quotes_used(self):
+    def test_select_supporting_evidence_caps_at_evidence_count(self):
         scored_pairs = [
-            (0.90, True, "f-1", "search misses records"),
-            (0.75, True, "f-2", "filters feel broken"),
-            (0.71, True, "f-3", "query parsing is weak"),
-            (0.40, False, "f-4", "other low signal"),
+            (0.90, "f-1", "dashboard loading is slow"),
+            (0.75, "f-2", "report latency is high"),
+            (0.71, "f-3", "performance is poor"),
+            (0.70, "f-4", "dashboard is slow"),
         ]
 
-        selected = _select_supporting_evidence(scored_pairs, evidence_count=4)
+        selected = _select_supporting_evidence(scored_pairs, evidence_count=3)
 
-        self.assertGreaterEqual(len(selected), 3)
-        self.assertTrue(set(["f-1", "f-2", "f-3"]).issubset({item[0] for item in selected}))
+        self.assertEqual(len(selected), 3)
+        self.assertEqual([item[0] for item in selected], ["f-1", "f-2", "f-3"])
 
 
 if __name__ == "__main__":

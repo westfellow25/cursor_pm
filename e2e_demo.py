@@ -48,6 +48,8 @@ SENTIMENT_WORDS = {
 }
 
 PERFORMANCE_TERMS = {"dashboard", "slow", "loading", "latency", "performance", "lag", "timeout"}
+EVIDENCE_KEYWORD_GATE = {"dashboard", "slow", "loading", "performance", "latency", "report"}
+OFF_THEME_TERMS = {"search", "export", "layout", "crash"}
 
 URGENCY_TERMS = {
     "blocked": 1.8,
@@ -322,41 +324,17 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
 
 
 def _select_supporting_evidence(
-    scored_pairs: list[tuple[float, bool, str, str]],
+    scored_pairs: list[tuple[float, str, str]],
     evidence_count: int,
     min_quotes_when_available: int = 3,
 ) -> list[tuple[str, str]]:
-    """Select evidence from a single cluster while preserving relevance-first ranking.
-
-    Relevance filtering is applied first (keyword hits). If that pool cannot satisfy
-    the minimum quote count, fallback fills from the same cluster by similarity.
-    """
+    """Select theme-pure evidence from all quotes, ranked by similarity."""
     if not scored_pairs or evidence_count <= 0:
         return []
 
-    ranked_pairs = sorted(scored_pairs, key=lambda item: (item[1], item[0]), reverse=True)
-    relevance_pool = [item for item in ranked_pairs if item[1]]
-    if not relevance_pool:
-        relevance_pool = ranked_pairs
-
-    similarities = sorted((item[0] for item in relevance_pool), reverse=True)
-    percentile_index = max(0, min(len(similarities) - 1, math.ceil(len(similarities) * 0.3) - 1))
-    dynamic_threshold = similarities[percentile_index]
-    passing = [item for item in relevance_pool if item[0] >= dynamic_threshold]
-
-    selected = passing[:evidence_count]
-    minimum_quotes = min(min_quotes_when_available, len(ranked_pairs), evidence_count)
-    if len(selected) < minimum_quotes:
-        needed = minimum_quotes - len(selected)
-        already_selected = {(feedback_id, quote) for _, _, feedback_id, quote in selected}
-        fallback = [
-            item
-            for item in sorted(ranked_pairs, key=lambda item: item[0], reverse=True)
-            if (item[2], item[3]) not in already_selected
-        ]
-        selected.extend(fallback[:needed])
-
-    return [(feedback_id, quote) for _, _, feedback_id, quote in selected]
+    ranked_pairs = sorted(scored_pairs, key=lambda item: item[0], reverse=True)
+    selected = ranked_pairs[:evidence_count]
+    return [(feedback_id, quote) for _, feedback_id, quote in selected]
 
 
 def _centroid(vectors: list[list[float]]) -> list[float]:
@@ -678,19 +656,23 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
         print(f"Acceptance criteria : {ticket['acceptance']}")
 
     print(_divider("5) SUPPORTING EVIDENCE"))
-    evidence_pairs = list(zip(top["ids"], top["texts"]))
+    evidence_pairs = [(record.feedback_id, record.text) for record in records]
     evidence_count = min(5, len(evidence_pairs))
     if evidence_pairs:
         embedder = HashingEmbedder(dimensions=128)
-        quote_vectors = embedder.embed(top["texts"])
-        example_vector = embedder.embed([top["example_signal"]])[0]
-        top_keywords = set(_top_keywords(top["texts"], limit=3))
+        quote_vectors = embedder.embed([quote for _, quote in evidence_pairs])
+        theme_anchor = (top.get("theme_label") or "").strip() or top["example_signal"]
+        theme_vector = embedder.embed([theme_anchor])[0]
         scored_pairs = []
         for (feedback_id, quote), vector in zip(evidence_pairs, quote_vectors):
-            similarity = _cosine_similarity(example_vector, vector)
             quote_tokens = set(_tokenize(quote))
-            keyword_hit = bool(top_keywords & quote_tokens)
-            scored_pairs.append((similarity, keyword_hit, feedback_id, quote))
+            if not (EVIDENCE_KEYWORD_GATE & quote_tokens):
+                continue
+            if OFF_THEME_TERMS & quote_tokens:
+                continue
+
+            similarity = _cosine_similarity(theme_vector, vector)
+            scored_pairs.append((similarity, feedback_id, quote))
 
         selected_evidence = _select_supporting_evidence(scored_pairs, evidence_count=evidence_count)
         for feedback_id, quote in selected_evidence:
