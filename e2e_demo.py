@@ -125,6 +125,16 @@ def _problem_statement(texts: list[str]) -> str:
     )
 
 
+def _top_keywords(texts: list[str], limit: int = 3) -> list[str]:
+    counts = Counter(
+        token
+        for text in texts
+        for token in _tokenize(text)
+        if len(token) > 3 and token not in STOPWORDS and token not in SENTIMENT_WORDS
+    )
+    return [token for token, _ in counts.most_common(limit)]
+
+
 def _theme_label(texts: list[str]) -> str:
     meaningful_tokens = [
         token
@@ -635,23 +645,38 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
     if evidence_pairs:
         embedder = HashingEmbedder(dimensions=128)
         quote_vectors = embedder.embed(top["texts"])
-        centroid = _centroid(quote_vectors)
-        threshold = 0.62
+        example_vector = embedder.embed([top["example_signal"]])[0]
+        top_keywords = set(_top_keywords(top["texts"], limit=3))
         scored_pairs = []
         for (feedback_id, quote), vector in zip(evidence_pairs, quote_vectors):
-            similarity = _cosine_similarity(centroid, vector)
-            scored_pairs.append((similarity, feedback_id, quote))
+            similarity = _cosine_similarity(example_vector, vector)
+            quote_tokens = set(_tokenize(quote))
+            keyword_hit = bool(top_keywords & quote_tokens)
+            scored_pairs.append((similarity, keyword_hit, feedback_id, quote))
 
-        passing = sorted([item for item in scored_pairs if item[0] >= threshold], key=lambda item: item[0], reverse=True)
-        fallback = sorted([item for item in scored_pairs if item[0] < threshold], key=lambda item: item[0], reverse=True)
+        ranked_pairs = sorted(scored_pairs, key=lambda item: (item[1], item[0]), reverse=True)
+        relevance_pool = [item for item in ranked_pairs if item[1]]
+        if not relevance_pool:
+            relevance_pool = ranked_pairs
+
+        similarities = sorted((item[0] for item in relevance_pool), reverse=True)
+        percentile_index = max(0, min(len(similarities) - 1, math.ceil(len(similarities) * 0.3) - 1))
+        dynamic_threshold = similarities[percentile_index]
+        passing = [item for item in relevance_pool if item[0] >= dynamic_threshold]
 
         selected = passing[:evidence_count]
-        minimum_quotes = min(3, len(scored_pairs))
+        minimum_quotes = min(2, len(relevance_pool))
         if len(selected) < minimum_quotes:
             needed = minimum_quotes - len(selected)
+            already_selected = {(feedback_id, quote) for _, _, feedback_id, quote in selected}
+            fallback = [
+                item
+                for item in relevance_pool
+                if (item[2], item[3]) not in already_selected
+            ]
             selected.extend(fallback[:needed])
 
-        selected_evidence = [(feedback_id, quote) for _, feedback_id, quote in selected]
+        selected_evidence = [(feedback_id, quote) for _, _, feedback_id, quote in selected]
         for feedback_id, quote in selected_evidence:
             print(f'  - [{feedback_id}] "{quote}"')
 
