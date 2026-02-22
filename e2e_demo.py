@@ -321,6 +321,44 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
     return dot / (left_norm * right_norm)
 
 
+def _select_supporting_evidence(
+    scored_pairs: list[tuple[float, bool, str, str]],
+    evidence_count: int,
+    min_quotes_when_available: int = 3,
+) -> list[tuple[str, str]]:
+    """Select evidence from a single cluster while preserving relevance-first ranking.
+
+    Relevance filtering is applied first (keyword hits). If that pool cannot satisfy
+    the minimum quote count, fallback fills from the same cluster by similarity.
+    """
+    if not scored_pairs or evidence_count <= 0:
+        return []
+
+    ranked_pairs = sorted(scored_pairs, key=lambda item: (item[1], item[0]), reverse=True)
+    relevance_pool = [item for item in ranked_pairs if item[1]]
+    if not relevance_pool:
+        relevance_pool = ranked_pairs
+
+    similarities = sorted((item[0] for item in relevance_pool), reverse=True)
+    percentile_index = max(0, min(len(similarities) - 1, math.ceil(len(similarities) * 0.3) - 1))
+    dynamic_threshold = similarities[percentile_index]
+    passing = [item for item in relevance_pool if item[0] >= dynamic_threshold]
+
+    selected = passing[:evidence_count]
+    minimum_quotes = min(min_quotes_when_available, len(ranked_pairs), evidence_count)
+    if len(selected) < minimum_quotes:
+        needed = minimum_quotes - len(selected)
+        already_selected = {(feedback_id, quote) for _, _, feedback_id, quote in selected}
+        fallback = [
+            item
+            for item in sorted(ranked_pairs, key=lambda item: item[0], reverse=True)
+            if (item[2], item[3]) not in already_selected
+        ]
+        selected.extend(fallback[:needed])
+
+    return [(feedback_id, quote) for _, _, feedback_id, quote in selected]
+
+
 def _centroid(vectors: list[list[float]]) -> list[float]:
     if not vectors:
         return []
@@ -654,29 +692,7 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
             keyword_hit = bool(top_keywords & quote_tokens)
             scored_pairs.append((similarity, keyword_hit, feedback_id, quote))
 
-        ranked_pairs = sorted(scored_pairs, key=lambda item: (item[1], item[0]), reverse=True)
-        relevance_pool = [item for item in ranked_pairs if item[1]]
-        if not relevance_pool:
-            relevance_pool = ranked_pairs
-
-        similarities = sorted((item[0] for item in relevance_pool), reverse=True)
-        percentile_index = max(0, min(len(similarities) - 1, math.ceil(len(similarities) * 0.3) - 1))
-        dynamic_threshold = similarities[percentile_index]
-        passing = [item for item in relevance_pool if item[0] >= dynamic_threshold]
-
-        selected = passing[:evidence_count]
-        minimum_quotes = min(2, len(relevance_pool))
-        if len(selected) < minimum_quotes:
-            needed = minimum_quotes - len(selected)
-            already_selected = {(feedback_id, quote) for _, _, feedback_id, quote in selected}
-            fallback = [
-                item
-                for item in relevance_pool
-                if (item[2], item[3]) not in already_selected
-            ]
-            selected.extend(fallback[:needed])
-
-        selected_evidence = [(feedback_id, quote) for _, _, feedback_id, quote in selected]
+        selected_evidence = _select_supporting_evidence(scored_pairs, evidence_count=evidence_count)
         for feedback_id, quote in selected_evidence:
             print(f'  - [{feedback_id}] "{quote}"')
 
