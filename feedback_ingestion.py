@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import math
 import re
 from collections import Counter
@@ -29,6 +30,7 @@ class ClusterResult:
 
     feedback_id: str
     cluster_id: int
+    similarity_to_centroid: float
 
 
 class CSVFeedbackParser:
@@ -99,7 +101,7 @@ class HashingEmbedder:
 
         token_counts = Counter(tokens)
         for token, count in token_counts.items():
-            idx = hash(token) % self.dimensions
+            idx = self._stable_bucket(token)
             tf = count / len(tokens)
             vector[idx] += tf * idf.get(token, 1.0)
 
@@ -108,20 +110,38 @@ class HashingEmbedder:
             return vector
         return [val / norm for val in vector]
 
+    def _stable_bucket(self, token: str) -> int:
+        digest = hashlib.md5(token.encode("utf-8"), usedforsecurity=False).digest()
+        return int.from_bytes(digest[:4], "big") % self.dimensions
+
 
 class KMeansClustering:
     """Very small K-Means implementation for embedding vectors."""
 
-    def __init__(self, n_clusters: int = 3, max_iters: int = 30, seed: int = 7) -> None:
+    def __init__(
+        self,
+        n_clusters: int = 3,
+        max_iters: int = 30,
+        seed: int = 23,
+        similarity_threshold: float = 0.62,
+    ) -> None:
         if n_clusters < 1:
             raise ValueError("n_clusters must be >= 1")
         self.n_clusters = n_clusters
         self.max_iters = max_iters
         self.seed = seed
+        self.similarity_threshold = similarity_threshold
 
     def fit_predict(self, vectors: Sequence[Sequence[float]]) -> List[int]:
+        assignments, _, _ = self.fit_predict_with_metrics(vectors)
+        return assignments
+
+    def fit_predict_with_metrics(
+        self,
+        vectors: Sequence[Sequence[float]],
+    ) -> tuple[List[int], List[float], dict[int, float]]:
         if not vectors:
-            return []
+            return [], [], {}
 
         n_clusters = min(self.n_clusters, len(vectors))
         rng = Random(self.seed)
@@ -146,7 +166,27 @@ class KMeansClustering:
             if not updated:
                 break
 
-        return assignments
+        similarities = [
+            self._cosine_similarity(vectors[i], centroids[assignments[i]])
+            for i in range(len(vectors))
+        ]
+
+        cluster_similarities: dict[int, List[float]] = {}
+        for cluster_id, similarity in zip(assignments, similarities):
+            cluster_similarities.setdefault(cluster_id, []).append(similarity)
+
+        coherence_by_cluster = {
+            cluster_id: (sum(values) / len(values))
+            for cluster_id, values in cluster_similarities.items()
+            if values
+        }
+
+        thresholded_assignments = [
+            cluster_id if similarities[i] >= self.similarity_threshold else -1
+            for i, cluster_id in enumerate(assignments)
+        ]
+
+        return thresholded_assignments, similarities, coherence_by_cluster
 
     def _recompute_centroids(
         self,
@@ -168,11 +208,26 @@ class KMeansClustering:
             if counts[cluster] == 0:
                 centroids.append([0.0] * dim)
             else:
-                centroids.append([value / counts[cluster] for value in sums[cluster]])
+                centroid = [value / counts[cluster] for value in sums[cluster]]
+                centroids.append(self._normalize(centroid))
         return centroids
 
     def _distance(self, left: Sequence[float], right: Sequence[float]) -> float:
-        return sum((a - b) ** 2 for a, b in zip(left, right))
+        return 1.0 - self._cosine_similarity(left, right)
+
+    def _cosine_similarity(self, left: Sequence[float], right: Sequence[float]) -> float:
+        dot = sum(a * b for a, b in zip(left, right))
+        left_norm = math.sqrt(sum(a * a for a in left))
+        right_norm = math.sqrt(sum(b * b for b in right))
+        if left_norm == 0 or right_norm == 0:
+            return 0.0
+        return dot / (left_norm * right_norm)
+
+    def _normalize(self, vector: Sequence[float]) -> List[float]:
+        norm = math.sqrt(sum(val * val for val in vector))
+        if norm == 0:
+            return list(vector)
+        return [val / norm for val in vector]
 
 
 def run_pipeline(csv_path: str | Path, n_clusters: int = 3) -> tuple[List[FeedbackRecord], List[ClusterResult]]:
@@ -182,12 +237,17 @@ def run_pipeline(csv_path: str | Path, n_clusters: int = 3) -> tuple[List[Feedba
     embedder = HashingEmbedder(dimensions=128)
     vectors = embedder.embed([record.text for record in records])
 
-    clusterer = KMeansClustering(n_clusters=n_clusters)
-    assignments = clusterer.fit_predict(vectors)
+    preferred_clusters = max(n_clusters, min(8, math.ceil(math.sqrt(len(records)) * 1.5)))
+    clusterer = KMeansClustering(n_clusters=preferred_clusters)
+    assignments, similarities, _ = clusterer.fit_predict_with_metrics(vectors)
 
     results = [
-        ClusterResult(feedback_id=record.feedback_id, cluster_id=cluster_id)
-        for record, cluster_id in zip(records, assignments)
+        ClusterResult(
+            feedback_id=record.feedback_id,
+            cluster_id=cluster_id,
+            similarity_to_centroid=round(similarity, 4),
+        )
+        for record, cluster_id, similarity in zip(records, assignments, similarities)
     ]
     return records, results
 

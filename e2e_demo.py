@@ -7,7 +7,7 @@ from pathlib import Path
 import math
 import re
 
-from feedback_ingestion import run_pipeline
+from feedback_ingestion import HashingEmbedder, run_pipeline
 
 URGENCY_TERMS = {
     "blocked": 1.8,
@@ -136,15 +136,20 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
 
     print(_divider("2) CLUSTER SNAPSHOT"))
     grouped_ids: dict[int, list[str]] = defaultdict(list)
+    grouped_similarity: dict[int, list[float]] = defaultdict(list)
     for row in cluster_results:
         grouped_ids[row.cluster_id].append(row.feedback_id)
+        grouped_similarity[row.cluster_id].append(row.similarity_to_centroid)
 
     print(f"Clusters generated : {len(grouped_ids)}")
     for cluster_id in sorted(grouped_ids):
         ids = grouped_ids[cluster_id]
         preview = next((r.text for r in records if r.feedback_id == ids[0]), "")
-        print(f"\n• Cluster {cluster_id}")
+        cluster_name = "misc/unclustered" if cluster_id == -1 else f"Cluster {cluster_id}"
+        coherence = sum(grouped_similarity[cluster_id]) / max(1, len(grouped_similarity[cluster_id]))
+        print(f"\n• {cluster_name}")
         print(f"  - Size            : {len(ids)} items")
+        print(f"  - Coherence score : {coherence:.3f}")
         print(f"  - Record IDs      : {', '.join(ids)}")
         print(f"  - Example signal  : {preview}")
 
@@ -158,6 +163,8 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
     cluster_metrics: dict[int, dict[str, object]] = {}
 
     for cluster_id, ids in grouped_ids.items():
+        if cluster_id == -1:
+            continue
         texts = [records_by_id[feedback_id].text for feedback_id in ids if feedback_id in records_by_id]
         example_signal = next((records_by_id[feedback_id].text for feedback_id in ids if feedback_id in records_by_id), "")
         frequency = len(texts)
@@ -174,6 +181,10 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
             "frequency": frequency,
             "severity": round(severity, 2),
         }
+
+    if not raw_scores:
+        print("Only misc/unclustered feedback remained after coherence filtering.")
+        return
 
     normalized_scores = _normalize_scores(raw_scores)
     ranked_clusters = sorted(
@@ -229,7 +240,21 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
     evidence_pairs = list(zip(top["ids"], top["texts"]))
     evidence_count = min(5, max(3, len(evidence_pairs)))
     if evidence_pairs:
-        selected_evidence = [evidence_pairs[index % len(evidence_pairs)] for index in range(evidence_count)]
+        embedder = HashingEmbedder(dimensions=128)
+        vectors = embedder.embed([top["example_signal"], *top["texts"]])
+        signal_vector, quote_vectors = vectors[0], vectors[1:]
+        scored_pairs = []
+        for (feedback_id, quote), vector in zip(evidence_pairs, quote_vectors):
+            similarity = sum(a * b for a, b in zip(signal_vector, vector))
+            scored_pairs.append((similarity, feedback_id, quote))
+
+        ranked_evidence = sorted(scored_pairs, key=lambda item: item[0], reverse=True)
+        semantically_close = [item for item in ranked_evidence if item[0] >= 0.55]
+        candidate_pool = semantically_close if len(semantically_close) >= 3 else ranked_evidence
+        selected_evidence = [
+            (feedback_id, quote)
+            for _, feedback_id, quote in candidate_pool[:evidence_count]
+        ]
         for feedback_id, quote in selected_evidence:
             print(f"  ▸ [{feedback_id}] “{quote}”")
 
