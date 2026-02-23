@@ -314,6 +314,75 @@ def _jira_tickets(top: dict[str, object], solution: str) -> list[dict[str, str]]
     ]
 
 
+def analyze_feedback(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int = 3) -> dict[str, object]:
+    csv_path = Path(csv_path)
+    records, cluster_results = run_pipeline(csv_path, n_clusters=n_clusters)
+    cluster_results = _refine_clusters(records, cluster_results)
+
+    grouped_ids: dict[int, list[str]] = defaultdict(list)
+    grouped_similarity: dict[int, list[float]] = defaultdict(list)
+    for row in cluster_results:
+        grouped_ids[row.cluster_id].append(row.feedback_id)
+        grouped_similarity[row.cluster_id].append(row.similarity_to_centroid)
+
+    records_by_id = {record.feedback_id: record for record in records}
+    raw_scores: dict[int, float] = {}
+    cluster_metrics: dict[int, dict[str, object]] = {}
+
+    for cluster_id, ids in grouped_ids.items():
+        if cluster_id == -1:
+            continue
+        texts = [records_by_id[feedback_id].text for feedback_id in ids if feedback_id in records_by_id]
+        example_signal = next((records_by_id[feedback_id].text for feedback_id in ids if feedback_id in records_by_id), "")
+        frequency = len(texts)
+        severity = _cluster_severity(texts)
+        prevalence = frequency / max(1, len(records))
+        weighted_score = (0.65 * frequency) + (0.35 * severity * 3.0)
+        raw_score = weighted_score * math.sqrt(1 + prevalence)
+        raw_scores[cluster_id] = raw_score
+        cluster_metrics[cluster_id] = {
+            "cluster_id": cluster_id,
+            "texts": texts,
+            "ids": [feedback_id for feedback_id in ids if feedback_id in records_by_id],
+            "example_signal": example_signal,
+            "theme_label": _theme_label(texts),
+            "frequency": frequency,
+            "severity": round(severity, 2),
+        }
+
+    normalized_scores = _normalize_scores(raw_scores)
+    ranked_clusters = sorted(
+        [
+            {
+                **cluster_metrics[cluster_id],
+                "opportunity_score": normalized_scores[cluster_id],
+            }
+            for cluster_id in cluster_metrics
+        ],
+        key=lambda item: (item["opportunity_score"], item["frequency"]),
+        reverse=True,
+    )
+
+    top = ranked_clusters[0] if ranked_clusters else None
+    proposed_solution = (
+        _proposed_solution(top["theme_label"], top["example_signal"], top["texts"])
+        if top
+        else ""
+    )
+    tickets = _jira_tickets(top, proposed_solution) if top else []
+    return {
+        "csv_path": csv_path,
+        "records": records,
+        "cluster_results": cluster_results,
+        "grouped_ids": grouped_ids,
+        "grouped_similarity": grouped_similarity,
+        "ranked_clusters": ranked_clusters,
+        "top": top,
+        "proposed_solution": proposed_solution,
+        "tickets": tickets,
+    }
+
+
 def _cosine_similarity(left: list[float], right: list[float]) -> float:
     dot = sum(a * b for a, b in zip(left, right))
     left_norm = math.sqrt(sum(a * a for a in left))
@@ -514,7 +583,16 @@ def _refine_clusters(records, cluster_results):
 
 
 def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int = 3) -> None:
-    csv_path = Path(csv_path)
+    analysis = analyze_feedback(csv_path=csv_path, n_clusters=n_clusters)
+    csv_path = analysis["csv_path"]
+    records = analysis["records"]
+    cluster_results = analysis["cluster_results"]
+    grouped_ids = analysis["grouped_ids"]
+    grouped_similarity = analysis["grouped_similarity"]
+    ranked_clusters = analysis["ranked_clusters"]
+    top = analysis["top"]
+    proposed_solution = analysis["proposed_solution"]
+    tickets = analysis["tickets"]
 
     print("\n" + "=" * 78)
     print("AI PRODUCT DISCOVERY - STAKEHOLDER DEMO OUTPUT")
@@ -522,19 +600,11 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
 
     print(_divider("1) DATA INGESTION"))
     print(f"Source file        : {csv_path}")
-    records, cluster_results = run_pipeline(csv_path, n_clusters=n_clusters)
-    cluster_results = _refine_clusters(records, cluster_results)
     print(f"Feedback loaded    : {len(records)} records")
     if len(records) < 8:
         print("Warning            : Dataset may be too small for strong clustering signal")
 
     print(_divider("2) CLUSTER SNAPSHOT"))
-    grouped_ids: dict[int, list[str]] = defaultdict(list)
-    grouped_similarity: dict[int, list[float]] = defaultdict(list)
-    for row in cluster_results:
-        grouped_ids[row.cluster_id].append(row.feedback_id)
-        grouped_similarity[row.cluster_id].append(row.similarity_to_centroid)
-
     print(f"Clusters generated : {len(grouped_ids)}")
     avg_cluster_size = (len(cluster_results) / max(1, len(grouped_ids))) if cluster_results else 0.0
     print(f"Avg cluster size   : {avg_cluster_size:.2f}")
@@ -554,47 +624,9 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
         print("No opportunities identified from this sample.")
         return
 
-    records_by_id = {record.feedback_id: record for record in records}
-    raw_scores: dict[int, float] = {}
-    cluster_metrics: dict[int, dict[str, object]] = {}
-
-    for cluster_id, ids in grouped_ids.items():
-        if cluster_id == -1:
-            continue
-        texts = [records_by_id[feedback_id].text for feedback_id in ids if feedback_id in records_by_id]
-        example_signal = next((records_by_id[feedback_id].text for feedback_id in ids if feedback_id in records_by_id), "")
-        frequency = len(texts)
-        severity = _cluster_severity(texts)
-        prevalence = frequency / max(1, len(records))
-        weighted_score = (0.65 * frequency) + (0.35 * severity * 3.0)
-        raw_score = weighted_score * math.sqrt(1 + prevalence)
-        raw_scores[cluster_id] = raw_score
-        cluster_metrics[cluster_id] = {
-            "cluster_id": cluster_id,
-            "texts": texts,
-            "ids": [feedback_id for feedback_id in ids if feedback_id in records_by_id],
-            "example_signal": example_signal,
-            "theme_label": _theme_label(texts),
-            "frequency": frequency,
-            "severity": round(severity, 2),
-        }
-
-    if not raw_scores:
+    if not ranked_clusters:
         print("Only misc/unclustered feedback remained after coherence filtering.")
         return
-
-    normalized_scores = _normalize_scores(raw_scores)
-    ranked_clusters = sorted(
-        [
-            {
-                **cluster_metrics[cluster_id],
-                "opportunity_score": normalized_scores[cluster_id],
-            }
-            for cluster_id in cluster_metrics
-        ],
-        key=lambda item: (item["opportunity_score"], item["frequency"]),
-        reverse=True,
-    )
 
     print(f"Clusters scored     : {len(ranked_clusters)}")
     print("Top opportunities   :")
@@ -609,13 +641,11 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
             f"     - Impact estimate   : {impact}"
         )
 
-    top = ranked_clusters[0]
     print(_divider("4) RECOMMENDED ACTION"))
     print(f"Top cluster         : Cluster {top['cluster_id']}")
     print(f"Theme label         : {top['theme_label']}")
     print(f"Problem statement   : {_problem_statement(top['texts'])}")
     print("Proposed solution   :")
-    proposed_solution = _proposed_solution(top["theme_label"], top["example_signal"], top["texts"])
     print(f"  {proposed_solution}")
     print("Why this, why now   :")
     top_frequency_pct = (top["frequency"] / max(1, len(records))) * 100
@@ -650,7 +680,7 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
         print(f"  - {risk}")
 
     print("\n=== IMPLEMENTATION BREAKDOWN ===")
-    for ticket in _jira_tickets(top, proposed_solution):
+    for ticket in tickets:
         print(f"\nTitle               : {ticket['title']}")
         print(f"Description         : {ticket['description']}")
         print(f"Acceptance criteria : {ticket['acceptance']}")

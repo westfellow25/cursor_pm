@@ -129,3 +129,29 @@ You will see:
 - cluster IDs and record IDs per cluster
 - top opportunity scores and summaries
 - one recommended feature with supporting quotes
+
+## 6) Generate markdown artifacts
+
+Use the artifact generator to run the same end-to-end analysis pipeline and save shareable docs in `docs/`.
+
+### Command
+
+```bash
+python generate_artifacts.py
+```
+
+Windows (PowerShell with Python launcher):
+
+```powershell
+py .\generate_artifacts.py
+```
+
+Optional flags:
+
+- `--csv <path>` to choose another feedback CSV file (default: `example_data/feedback.csv`)
+- `--clusters <n>` to override cluster count
+
+Generated files:
+
+- `docs/PRD.md`
+- `docs/jira_tickets.md`
