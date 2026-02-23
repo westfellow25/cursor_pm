@@ -7,9 +7,9 @@ from tempfile import NamedTemporaryFile
 
 import pandas as pd
 
-from app.clustering import cluster_feedback
-from app.openai_client import embed_texts
-from app.schemas import AnalyzeResponse, DiscoveryResponse, OpportunitySummary
+from .clustering import cluster_feedback
+from .openai_client import embed_texts
+from .schemas import AnalyzeResponse, DiscoveryResponse, OpportunitySummary
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
