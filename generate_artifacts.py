@@ -71,19 +71,25 @@ def _build_tickets_markdown(tickets: list[dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
-def generate_artifacts(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int = 3) -> tuple[Path, Path]:
-    analysis = analyze_feedback(csv_path=csv_path, n_clusters=n_clusters)
+def build_artifact_content(analysis: dict[str, object]) -> tuple[str, str]:
     top = analysis["top"]
     if not top:
         raise RuntimeError("No non-misc clusters found, unable to generate artifacts.")
+
+    prd_content = _build_prd_markdown(top, len(analysis["records"]), analysis["proposed_solution"])
+    tickets_content = _build_tickets_markdown(analysis["tickets"])
+    return prd_content, tickets_content
+
+
+def generate_artifacts(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int = 3) -> tuple[Path, Path]:
+    analysis = analyze_feedback(csv_path=csv_path, n_clusters=n_clusters)
 
     docs_dir = Path("docs")
     docs_dir.mkdir(parents=True, exist_ok=True)
     prd_path = docs_dir / "PRD.md"
     tickets_path = docs_dir / "jira_tickets.md"
 
-    prd_content = _build_prd_markdown(top, len(analysis["records"]), analysis["proposed_solution"])
-    tickets_content = _build_tickets_markdown(analysis["tickets"])
+    prd_content, tickets_content = build_artifact_content(analysis)
 
     prd_path.write_text(prd_content, encoding="utf-8", newline="\n")
     tickets_path.write_text(tickets_content, encoding="utf-8", newline="\n")
