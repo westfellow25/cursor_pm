@@ -12,3 +12,12 @@ class DiscoveryResponse(BaseModel):
     total_feedback_items: int = Field(..., ge=0)
     total_clusters: int = Field(..., ge=0)
     opportunities: list[OpportunitySummary]
+
+
+class AnalyzeResponse(BaseModel):
+    clusters_summary: list[OpportunitySummary]
+    top_opportunities: list[dict[str, object]]
+    recommended_action: str
+    evidence: list[str]
+    prd_text: str
+    jira_tickets_text: str

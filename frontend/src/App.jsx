@@ -19,7 +19,7 @@ export function App() {
     formData.append("file", file);
 
     try {
-      const response = await fetch(`${API_URL}/discover`, {
+      const response = await fetch(`${API_URL}/analyze`, {
         method: "POST",
         body: formData,
       });
@@ -49,7 +49,7 @@ export function App() {
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
         />
         <button type="submit" disabled={!file || loading}>
-          {loading ? "Analyzing..." : "Upload and Analyze"}
+          {loading ? "Analyzing..." : "Analyze"}
         </button>
       </form>
 
@@ -57,16 +57,27 @@ export function App() {
 
       {result && (
         <section>
-          <h2>Opportunities ({result.total_clusters})</h2>
+          <h2>Top Opportunity</h2>
+          <p>{result.top_opportunities[0]?.theme_label ?? "N/A"}</p>
+
+          <h2>Recommended Action</h2>
+          <p>{result.recommended_action}</p>
+
+          <h2>Evidence</h2>
           <ul>
-            {result.opportunities.map((item) => (
-              <li key={item.cluster_id}>
-                <strong>{item.theme}</strong>
-                <p>Mentions: {item.size}</p>
-                <small>{item.representative_feedback}</small>
-              </li>
+            {result.evidence.map((item, idx) => (
+              <li key={`${item.slice(0, 24)}-${idx}`}>{item}</li>
             ))}
           </ul>
+
+          <div>
+            <a href={`${API_URL}/download/prd`} target="_blank" rel="noreferrer">
+              <button type="button">Download PRD</button>
+            </a>
+            <a href={`${API_URL}/download/jira`} target="_blank" rel="noreferrer">
+              <button type="button">Download Jira Tickets</button>
+            </a>
+          </div>
         </section>
       )}
     </main>

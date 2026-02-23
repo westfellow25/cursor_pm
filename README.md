@@ -31,14 +31,20 @@ Minimal MVP to ingest customer feedback, cluster similar problems using embeddin
 
 - `GET /health` → health check.
 - `POST /discover` → accepts CSV upload with required `feedback` column.
+- `POST /analyze` → runs the full analysis + artifact generation pipeline and returns JSON summary, recommendation, evidence, PRD text, and Jira tickets text.
+- `GET /download/prd` → downloads the latest generated PRD markdown from memory.
+- `GET /download/jira` → downloads the latest generated Jira tickets markdown from memory.
 
 ### Expected CSV
 
-At least one column named `feedback`:
+- `POST /discover` expects a CSV with at least one `feedback` column.
+- `POST /analyze` reuses the artifact pipeline input schema and expects: `feedback_id,text,source`.
+
+Example for `/analyze`:
 
 ```csv
-feedback
-"Your customer feedback text here"
+feedback_id,text,source
+f001,"The dashboard is slow when loading monthly reports",web
 ```
 
 ## 3) Clustering pipeline (MVP)
@@ -86,7 +92,11 @@ export VITE_API_URL="http://localhost:8000"
 
 ## Quick test
 
-Use `data/sample_feedback.csv` in the UI upload form.
+1. Open the frontend app.
+2. Upload a pipeline CSV (you can use `example_data/feedback.csv`).
+3. Click **Analyze** to run the backend pipeline.
+4. Review top opportunity, recommended action, and evidence in the UI.
+5. Click **Download PRD** or **Download Jira Tickets** to fetch markdown from the last analysis run.
 
 
 ## 5) End-to-end demo script (simple + reliable)
