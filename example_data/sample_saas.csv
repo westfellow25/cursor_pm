@@ -1,0 +1,15 @@
+text,source
+"Onboarding wizard is too long and confusing",web
+"Onboarding flow lost our new teammate at step 3",support
+"Onboarding asks too many questions before showing the product",web
+"Onboarding setup wizard needs a skip button",mobile
+"Slack integration fails during authorization",support
+"Slack integration keeps disconnecting after a few days",support
+"Slack integration silently stops posting notifications",web
+"Slack integration error messages are useless",web
+"CSV export is missing date range filters",web
+"CSV export is missing segment and cohort columns",support
+"CSV export takes too long to run every week",support
+"CSV export needs scheduled weekly delivery",web
+"Billing page does not show the next renewal date",web
+"Billing page invoice appears 5 days late",support

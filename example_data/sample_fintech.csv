@@ -1,0 +1,15 @@
+text,source
+"Login 2FA code arrives after the timer expires",support
+"Login 2FA SMS never arrives on my carrier",support
+"Login 2FA prompts even on trusted devices",mobile
+"Login 2FA setup is confusing about backup codes",support
+"Transfer to external account takes 3 business days",web
+"Transfer international fails without explanation",support
+"Transfer cannot be scheduled as recurring",mobile
+"Transfer limit increase cannot be requested in app",support
+"Statement is not downloadable as PDF",web
+"Statement export is missing category breakdown",support
+"Statement page has no date range filter",web
+"Statement annual tax report was delayed",support
+"KYC verification rejected my passport photo",support
+"KYC step gives no actionable feedback on rejection",mobile

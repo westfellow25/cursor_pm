@@ -10,7 +10,11 @@ Runs entirely from FastAPI. No Node/npm, no OpenAI key required (the default pip
 - `POST /analyze` — runs the analysis pipeline on the uploaded CSV (`file` form field). Returns JSON including a `run_id`.
 - `GET /download/prd/{run_id}` — PRD markdown for a specific run.
 - `GET /download/jira/{run_id}` — Jira tickets markdown for a specific run.
+- `GET /samples` — list available demo datasets.
+- `GET /samples/{name}` — return the CSV for a named demo dataset (`saas`, `ecommerce`, `fintech`).
 - `GET /health` — health check.
+
+The home page exposes "Try sample" buttons that load each bundled demo dataset and run it through `/analyze` without any upload.
 
 ## Quick start
 

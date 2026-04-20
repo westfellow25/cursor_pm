@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -9,7 +10,31 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from .pipeline import analyze_feedback_csv
 from .schemas import AnalyzeResponse
 
-app = FastAPI(title="AI Product Discovery MVP", version="0.2.0")
+app = FastAPI(title="AI Product Discovery MVP", version="0.3.0")
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SAMPLES_DIR = PROJECT_ROOT / "example_data"
+SAMPLES: list[dict[str, str]] = [
+    {
+        "name": "saas",
+        "filename": "sample_saas.csv",
+        "label": "SaaS onboarding & integrations",
+        "description": "14 support tickets: onboarding drop-off, Slack integration failures, CSV export gaps, billing clarity.",
+    },
+    {
+        "name": "ecommerce",
+        "filename": "sample_ecommerce.csv",
+        "label": "E-commerce checkout & search",
+        "description": "14 complaints: checkout payment errors, shipping transparency, product search quality, returns UX.",
+    },
+    {
+        "name": "fintech",
+        "filename": "sample_fintech.csv",
+        "label": "Fintech login & transfers",
+        "description": "14 app reviews: 2FA login pain, transfer limits/delays, statement export, KYC rejections.",
+    },
+]
+SAMPLES_BY_NAME = {entry["name"]: entry for entry in SAMPLES}
 
 app.add_middleware(
     CORSMiddleware,
@@ -73,7 +98,11 @@ HOME_HTML = """<!doctype html>
     <input id="fileInput" type="file" accept=".csv" />
     <button id="analyzeBtn">Analyze</button>
     <p id="status" class="status"></p>
-    <div class="links">
+    <div style="margin-top:0.6rem;">
+      <strong>Or try a sample dataset:</strong>
+      <div id="samples" style="margin-top:0.4rem; display: flex; flex-wrap: wrap; gap: 0.4rem;"></div>
+    </div>
+    <div class="links" style="margin-top:0.9rem;">
       <a id="prdLink" class="disabled" target="_blank" rel="noopener">Download PRD</a>
       <a id="jiraLink" class="disabled" target="_blank" rel="noopener">Download Jira tickets</a>
     </div>
@@ -137,20 +166,13 @@ HOME_HTML = """<!doctype html>
       }
     }
 
-    analyzeBtn.addEventListener('click', async () => {
-      const file = fileInput.files[0];
-      if (!file) {
-        statusEl.className = 'status error';
-        statusEl.textContent = 'Please choose a CSV file first.';
-        return;
-      }
-
+    async function runAnalysis(blob, filename, noticeLabel) {
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', blob, filename);
 
       analyzeBtn.disabled = true;
       statusEl.className = 'status';
-      statusEl.textContent = 'Analyzing…';
+      statusEl.textContent = noticeLabel ? `Analyzing ${noticeLabel}…` : 'Analyzing…';
       prdLink.classList.add('disabled');
       jiraLink.classList.add('disabled');
       prdLink.removeAttribute('href');
@@ -180,7 +202,47 @@ HOME_HTML = """<!doctype html>
       } finally {
         analyzeBtn.disabled = false;
       }
+    }
+
+    analyzeBtn.addEventListener('click', () => {
+      const file = fileInput.files[0];
+      if (!file) {
+        statusEl.className = 'status error';
+        statusEl.textContent = 'Please choose a CSV file first.';
+        return;
+      }
+      runAnalysis(file, file.name, '');
     });
+
+    async function loadSamples() {
+      const samplesEl = document.getElementById('samples');
+      try {
+        const response = await fetch('/samples');
+        const data = await response.json();
+        (data.samples || []).forEach((sample) => {
+          const btn = document.createElement('button');
+          btn.style.background = '#eef2ff';
+          btn.style.color = '#1f2430';
+          btn.style.border = '1px solid #c7d2fe';
+          btn.textContent = `Try: ${sample.label}`;
+          btn.title = sample.description;
+          btn.addEventListener('click', async () => {
+            const csvResp = await fetch(`/samples/${sample.name}`);
+            if (!csvResp.ok) {
+              statusEl.className = 'status error';
+              statusEl.textContent = `Could not load sample ${sample.name}`;
+              return;
+            }
+            const blob = await csvResp.blob();
+            runAnalysis(blob, sample.filename || `${sample.name}.csv`, sample.label);
+          });
+          samplesEl.appendChild(btn);
+        });
+      } catch (error) {
+        samplesEl.textContent = 'Samples unavailable.';
+      }
+    }
+    loadSamples();
   </script>
 </body>
 </html>
@@ -195,6 +257,31 @@ def home() -> str:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/samples")
+def list_samples() -> dict[str, list[dict[str, str]]]:
+    return {
+        "samples": [
+            {"name": s["name"], "label": s["label"], "description": s["description"], "filename": s["filename"]}
+            for s in SAMPLES
+        ]
+    }
+
+
+@app.get("/samples/{name}")
+def get_sample(name: str) -> PlainTextResponse:
+    sample = SAMPLES_BY_NAME.get(name)
+    if not sample:
+        raise HTTPException(status_code=404, detail=f"Unknown sample: {name}")
+    path = SAMPLES_DIR / sample["filename"]
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Sample file missing on server: {sample['filename']}")
+    return PlainTextResponse(
+        content=path.read_text(encoding="utf-8"),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'inline; filename="{sample["filename"]}"'},
+    )
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)

@@ -68,6 +68,32 @@ def test_analyze_rejects_missing_text_column() -> None:
     assert "text" in response.json()["detail"].lower()
 
 
+def test_list_samples_returns_three_entries() -> None:
+    response = client.get("/samples")
+    assert response.status_code == 200
+    samples = response.json()["samples"]
+    names = [s["name"] for s in samples]
+    assert set(names) == {"saas", "ecommerce", "fintech"}
+    for s in samples:
+        assert s["label"] and s["description"] and s["filename"]
+
+
+def test_get_sample_returns_csv_and_is_analyzable() -> None:
+    response = client.get("/samples/saas")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    csv_bytes = response.content
+    analysis = _analyze(csv_bytes, filename="saas.csv")
+    # The SaaS sample is engineered so Slack/CSV/onboarding/billing all cluster
+    # together; the top cluster must have more than one item.
+    assert analysis["clusters_summary"][0]["size"] >= 3
+
+
+def test_get_unknown_sample_returns_404() -> None:
+    response = client.get("/samples/does-not-exist")
+    assert response.status_code == 404
+
+
 def test_concurrent_runs_do_not_clobber_each_other() -> None:
     # Two different uploads must produce two independently downloadable run_ids.
     first = _analyze((ROOT / "data" / "sample_feedback.csv").read_bytes(), filename="a.csv")

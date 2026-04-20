@@ -279,9 +279,10 @@ def run_pipeline(csv_path: str | Path, n_clusters: int = 3) -> tuple[List[Feedba
     embedder = HashingEmbedder(dimensions=128)
     vectors = embedder.embed([record.text for record in records])
 
-    preferred_clusters = max(n_clusters, min(8, math.ceil(math.sqrt(len(records)) * 1.5)))
-    if len(records) <= 12:
-        preferred_clusters = min(preferred_clusters, max(3, len(records) // 2))
+    # Aim for a handful of sizable clusters instead of many tiny ones: for small
+    # datasets the hashing embedder tends to fragment themes, so we'd rather
+    # oversize clusters and let _refine_clusters split later if coherence is low.
+    preferred_clusters = max(n_clusters, min(6, max(2, len(records) // 4)))
     clusterer = KMeansClustering(n_clusters=preferred_clusters)
     assignments, similarities, _ = clusterer.fit_predict_with_metrics(vectors)
 

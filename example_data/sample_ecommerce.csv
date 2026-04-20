@@ -1,0 +1,15 @@
+text,source
+"Checkout payment step fails with a generic error",support
+"Checkout payment button does nothing on mobile",mobile
+"Checkout payment was charged twice on error",support
+"Checkout payment declined repeatedly for no reason",support
+"Shipping cost is hidden until the last checkout step",web
+"Shipping estimate was 6 days off on my last order",support
+"Shipping options are not shown on the product page",web
+"Shipping free threshold is not visible in the cart",web
+"Product search returns unrelated items for brand queries",web
+"Product search does not tolerate typos at all",mobile
+"Product search filters reset when I open an item",web
+"Product search is too slow on mobile",mobile
+"Returns portal is buried deep in the account menu",support
+"Returns portal rejects my order without explanation",support

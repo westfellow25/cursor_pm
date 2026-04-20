@@ -33,6 +33,36 @@ STOPWORDS = {
     "less",
     "hard",
     "find",
+    "not",
+    "are",
+    "was",
+    "were",
+    "has",
+    "had",
+    "its",
+    "our",
+    "you",
+    "your",
+    "they",
+    "them",
+    "their",
+    "will",
+    "would",
+    "could",
+    "should",
+    "only",
+    "some",
+    "any",
+    "cannot",
+    "cant",
+    "wont",
+    "even",
+    "also",
+    "other",
+    "page",
+    "days",
+    "day",
+    "about",
 }
 
 SENTIMENT_WORDS = {
@@ -450,26 +480,6 @@ def _refine_clusters(records, cluster_results):
     for feedback_id, cluster_id in assignments.items():
         grouped[cluster_id].append(feedback_id)
 
-    for cluster_id, feedback_ids in list(grouped.items()):
-        if cluster_id == -1 or len(feedback_ids) <= 1:
-            continue
-        pairwise = []
-        for i, left_id in enumerate(feedback_ids):
-            for right_id in feedback_ids[i + 1:]:
-                left_vec = vectors[index_by_id[left_id]]
-                right_vec = vectors[index_by_id[right_id]]
-                pairwise.append(_cosine_similarity(left_vec, right_vec))
-        avg_similarity = sum(pairwise) / len(pairwise) if pairwise else 1.0
-        if len(records) > 15 and avg_similarity < 0.5:
-            for feedback_id in feedback_ids:
-                assignments[feedback_id] = next_cluster_id
-                similarity_by_id[feedback_id] = max(similarity_by_id[feedback_id], 0.62)
-                next_cluster_id += 1
-
-    grouped = defaultdict(list)
-    for feedback_id, cluster_id in assignments.items():
-        grouped[cluster_id].append(feedback_id)
-
     misc_size = len(grouped.get(-1, []))
     largest_non_misc = max((len(ids) for cid, ids in grouped.items() if cid != -1), default=0)
     if misc_size > 0 and misc_size >= largest_non_misc:
@@ -483,7 +493,7 @@ def _refine_clusters(records, cluster_results):
         grouped[cluster_id].append(feedback_id)
 
     avg_cluster_size = len(records) / max(1, len(grouped))
-    if avg_cluster_size < 2 and len(records) <= 12:
+    if avg_cluster_size < 2.5 and len(records) <= 30:
         thresholds = [0.72, 0.66, 0.6, 0.54, 0.48]
         for merge_threshold in thresholds:
             reassigned = False
@@ -520,13 +530,14 @@ def _refine_clusters(records, cluster_results):
                     reassigned = True
 
             avg_cluster_size = len(records) / max(1, len(grouped))
-            if avg_cluster_size >= 2:
+            if avg_cluster_size >= 2.5:
                 break
             if not reassigned:
                 continue
 
-    if len(records) <= 12 and len(grouped) > 5:
-        while len(grouped) > 5:
+    max_clusters = max(3, min(6, len(records) // 3))
+    if len(records) <= 30 and len(grouped) > max_clusters:
+        while len(grouped) > max_clusters:
             smallest_cluster = min(grouped, key=lambda cid: len(grouped[cid]))
             source_ids = grouped[smallest_cluster]
             source_vectors = [vectors[index_by_id[fid]] for fid in source_ids]
