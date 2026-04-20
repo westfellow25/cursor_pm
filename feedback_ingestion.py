@@ -71,12 +71,18 @@ class CSVFeedbackParser:
 
 
 class HashingEmbedder:
-    """Creates deterministic dense embeddings using token hashing and TF-IDF style weighting."""
+    """Creates deterministic dense embeddings using token hashing and TF-IDF style weighting.
 
-    def __init__(self, dimensions: int = 128) -> None:
+    Also emits token bigrams so paraphrases that share a concrete phrase
+    (e.g. "Slack integration") produce overlapping features even when their
+    surrounding wording differs.
+    """
+
+    def __init__(self, dimensions: int = 256, use_bigrams: bool = True) -> None:
         if dimensions < 8:
             raise ValueError("Embedding dimension should be at least 8")
         self.dimensions = dimensions
+        self.use_bigrams = use_bigrams
 
     def embed(self, texts: Sequence[str]) -> List[List[float]]:
         tokenized = [self._tokenize(text) for text in texts]
@@ -84,7 +90,11 @@ class HashingEmbedder:
         return [self._vectorize(tokens, idf) for tokens in tokenized]
 
     def _tokenize(self, text: str) -> List[str]:
-        return [token.lower() for token in TOKEN_RE.findall(text)]
+        unigrams = [token.lower() for token in TOKEN_RE.findall(text)]
+        if not self.use_bigrams or len(unigrams) < 2:
+            return unigrams
+        bigrams = [f"{a}_{b}" for a, b in zip(unigrams, unigrams[1:])]
+        return unigrams + bigrams
 
     def _compute_idf(self, tokenized_texts: Sequence[Sequence[str]]) -> dict[str, float]:
         doc_count = len(tokenized_texts)
@@ -276,7 +286,7 @@ def run_pipeline(csv_path: str | Path, n_clusters: int = 3) -> tuple[List[Feedba
     parser = CSVFeedbackParser()
     records = parser.parse(csv_path)
 
-    embedder = HashingEmbedder(dimensions=128)
+    embedder = HashingEmbedder(dimensions=256)
     vectors = embedder.embed([record.text for record in records])
 
     # Aim for a handful of sizable clusters instead of many tiny ones: for small

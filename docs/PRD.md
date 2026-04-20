@@ -12,7 +12,7 @@ Active users impacted by cluster 1 pain points (~50% of sampled feedback), espec
 Address the repeated user friction around onboarding, flow, confusing by streamlining the affected workflow, removing manual steps where possible, and improving the reliability and clarity of the experience so users can complete the task without hitting the same issue again. Start with a focused fix for the top signal ("The onboarding flow is confusing for first-time users") and extend improvements to adjacent pain points in this cluster.
 
 ## Context
-- Theme label: Onboarding Flow workflow issues
+- Theme label: Onboarding Flow
 - Cluster ID: 1
 - Opportunity score: 10.0
 - Frequency: 3 / 6 feedback items

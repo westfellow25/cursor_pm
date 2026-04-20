@@ -96,7 +96,17 @@ URGENCY_TERMS = {
 
 
 def _tokenize(text: str) -> list[str]:
-    return re.findall(r"[a-zA-Z']+", text.lower())
+    # Keep alphanumeric tokens so abbreviations like "2FA", "CSV", "SLA" survive.
+    return re.findall(r"[a-zA-Z0-9']+", text.lower())
+
+
+def _presentable(word: str) -> str:
+    """Render a lowercased token for display: uppercase acronyms/abbreviations."""
+    if not word:
+        return word
+    if any(ch.isdigit() for ch in word) or len(word) <= 3:
+        return word.upper()
+    return word.capitalize()
 
 
 def _divider(title: str) -> str:
@@ -203,15 +213,63 @@ def _distinctive_keywords(
     return ranked[:limit]
 
 
+def _meaningful_bigrams(texts: list[str]) -> list[tuple[str, str]]:
+    bigrams: list[tuple[str, str]] = []
+    for text in texts:
+        tokens = [
+            token
+            for token in _tokenize(text)
+            if len(token) > 2 and token not in STOPWORDS and token not in SENTIMENT_WORDS
+        ]
+        bigrams.extend(zip(tokens, tokens[1:]))
+    return bigrams
+
+
+def _distinctive_bigram(
+    cluster_texts: list[str],
+    corpus_by_cluster: dict[int, list[str]] | None,
+) -> tuple[str, str] | None:
+    """Return a high-signal bigram for this cluster, or None if nothing stands out.
+
+    A bigram wins when it appears at least twice inside the cluster and in at
+    most one other cluster — i.e. it is both recurrent and distinctive.
+    """
+    local_counts = Counter(_meaningful_bigrams(cluster_texts))
+    if not local_counts:
+        return None
+
+    if not corpus_by_cluster or len(corpus_by_cluster) <= 1:
+        best, count = local_counts.most_common(1)[0]
+        return best if count >= 2 else None
+
+    doc_freq: Counter[tuple[str, str]] = Counter()
+    for other_texts in corpus_by_cluster.values():
+        for bigram in set(_meaningful_bigrams(other_texts)):
+            doc_freq[bigram] += 1
+
+    candidates = [
+        (bigram, count)
+        for bigram, count in local_counts.items()
+        if count >= 2 and doc_freq.get(bigram, 0) <= 1
+    ]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[1], -doc_freq.get(item[0], 0)), reverse=True)
+    return candidates[0][0]
+
+
 def _theme_label(
     texts: list[str],
     corpus_by_cluster: dict[int, list[str]] | None = None,
 ) -> str:
+    bigram = _distinctive_bigram(texts, corpus_by_cluster)
+    if bigram:
+        return " ".join(_presentable(word) for word in bigram)
+
     keywords = _distinctive_keywords(texts, corpus_by_cluster, limit=2)
     if not keywords:
-        return "Core workflow experience issues"
-    label_tokens = [word.capitalize() for word in keywords]
-    return " ".join([*label_tokens, "workflow issues"]) if len(label_tokens) >= 2 else f"{label_tokens[0]} workflow issues"
+        return "Core workflow pain point"
+    return " ".join(_presentable(word) for word in keywords)
 
 
 def _proposed_solution(
@@ -239,10 +297,10 @@ def _proposed_solution(
 
 def _feature_name(theme_label: str, keywords: list[str] | None = None) -> str:
     if keywords:
-        leading_terms = [word.capitalize() for word in keywords[:2]]
+        leading_terms = [_presentable(word) for word in keywords[:2]]
     else:
         leading_terms = [
-            token.capitalize()
+            _presentable(token)
             for token in _tokenize(theme_label)
             if token not in STOPWORDS and token not in SENTIMENT_WORDS
         ][:2]
@@ -279,7 +337,7 @@ def _risks(top: dict[str, object]) -> list[str]:
 
 def _jira_tickets(top: dict[str, object], solution: str) -> list[dict[str, str]]:
     keywords = list(top.get("keywords") or [])
-    theme_short = " ".join(word.capitalize() for word in keywords[:2]) if keywords else str(top["theme_label"])
+    theme_short = " ".join(_presentable(word) for word in keywords[:2]) if keywords else str(top["theme_label"])
     return [
         {
             "title": f"[Frontend] Improve {theme_short} workflow UX",
@@ -449,7 +507,7 @@ def _centroid(vectors: list[list[float]]) -> list[float]:
 
 
 def _refine_clusters(records, cluster_results):
-    embedder = HashingEmbedder(dimensions=128)
+    embedder = HashingEmbedder(dimensions=256)
     vectors = embedder.embed([record.text for record in records])
     index_by_id = {record.feedback_id: idx for idx, record in enumerate(records)}
     text_by_id = {record.feedback_id: record.text for record in records}
@@ -688,7 +746,7 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
     cluster_pairs = [(fid, quote) for fid, quote in cluster_pairs if quote]
     evidence_count = min(5, len(cluster_pairs))
     if cluster_pairs:
-        embedder = HashingEmbedder(dimensions=128)
+        embedder = HashingEmbedder(dimensions=256)
         quote_vectors = embedder.embed([quote for _, quote in cluster_pairs])
         centroid_vec = _centroid(quote_vectors)
         scored_pairs = [

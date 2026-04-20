@@ -82,6 +82,8 @@ HOME_HTML = """<!doctype html>
     .cluster h3 { margin: 0 0 0.25rem; font-size: 1.05rem; }
     .cluster .meta { color: #6b7280; font-size: 0.88rem; margin-bottom: 0.4rem; }
     .cluster .quote { font-style: italic; color: #374151; }
+    .cluster ul.items { margin: 0.4rem 0 0 1rem; padding: 0; color: #374151; }
+    .cluster ul.items li { margin: 0.2rem 0; }
     details { margin-top: 0.5rem; }
     details pre { white-space: pre-wrap; background: #f3f4f6; padding: 0.7rem; border-radius: 8px; font-size: 0.85rem; }
     .status { min-height: 1.2rem; color: #2563eb; font-size: 0.92rem; }
@@ -136,6 +138,15 @@ HOME_HTML = """<!doctype html>
     const prdLink = document.getElementById('prdLink');
     const jiraLink = document.getElementById('jiraLink');
 
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
     function renderClusters(data) {
       const top = (data.top_opportunities || []).slice(0, 3);
       if (!top.length) {
@@ -146,22 +157,35 @@ HOME_HTML = """<!doctype html>
       top.forEach((cluster, idx) => {
         const card = document.createElement('div');
         card.className = 'cluster';
-        const theme = cluster.theme_label || `Cluster ${cluster.cluster_id}`;
+        const theme = escapeHtml(cluster.theme_label || `Cluster ${cluster.cluster_id}`);
         const freq = cluster.frequency ?? cluster.size ?? 0;
         const score = cluster.opportunity_score != null ? cluster.opportunity_score.toFixed(2) : '-';
         const example = cluster.example_signal || cluster.representative_feedback || '';
+        const texts = cluster.texts || [];
+        const ids = cluster.ids || [];
+
+        let membership = '';
+        if (texts.length > 1) {
+          const rows = texts.map((quote, i) => {
+            const label = ids[i] ? `<span class="muted">[${escapeHtml(ids[i])}]</span> ` : '';
+            return `<li>${label}${escapeHtml(quote)}</li>`;
+          }).join('');
+          membership = `<details><summary class="muted">Show all ${texts.length} items</summary><ul class="items">${rows}</ul></details>`;
+        }
+
         card.innerHTML =
           `<h3>#${idx + 1}. ${theme}</h3>` +
           `<div class="meta">Frequency: ${freq} · Severity: ${cluster.severity ?? '-'} · Opportunity score: ${score}</div>` +
-          (example ? `<div class="quote">"${example}"</div>` : '');
+          (example ? `<div class="quote">"${escapeHtml(example)}"</div>` : '') +
+          membership;
         clustersEl.appendChild(card);
       });
 
       if ((data.evidence || []).length) {
         const ev = document.createElement('div');
         ev.className = 'cluster';
-        ev.innerHTML = '<h3>Supporting evidence</h3>' +
-          (data.evidence || []).map(q => `<div class="quote">"${q}"</div>`).join('');
+        ev.innerHTML = '<h3>Supporting evidence (top cluster)</h3>' +
+          (data.evidence || []).map(q => `<div class="quote">"${escapeHtml(q)}"</div>`).join('');
         clustersEl.appendChild(ev);
       }
     }

@@ -62,7 +62,7 @@ def _build_evidence(analysis: dict[str, object]) -> list[str]:
     if not cluster_texts:
         return []
 
-    embedder = HashingEmbedder(dimensions=128)
+    embedder = HashingEmbedder(dimensions=256)
     vectors = embedder.embed(cluster_texts)
     centroid_vec = _centroid(vectors)
     scored_pairs = [

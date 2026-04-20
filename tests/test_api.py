@@ -89,6 +89,19 @@ def test_get_sample_returns_csv_and_is_analyzable() -> None:
     assert analysis["clusters_summary"][0]["size"] >= 3
 
 
+def test_fintech_sample_surfaces_login_2fa_cluster() -> None:
+    response = client.get("/samples/fintech")
+    csv_bytes = response.content
+    analysis = _analyze(csv_bytes, filename="fintech.csv")
+    themes = [c["theme"] for c in analysis["clusters_summary"]]
+    # Bigram-aware labeling + alphanumeric tokens must surface "Login 2FA" as
+    # a distinct theme on the fintech dataset. Locks the presentation detail:
+    # abbreviations are uppercased, label is not the old "workflow issues" form.
+    assert any("2FA" in theme for theme in themes), themes
+    for theme in themes:
+        assert "workflow issues" not in theme.lower(), theme
+
+
 def test_get_unknown_sample_returns_404() -> None:
     response = client.get("/samples/does-not-exist")
     assert response.status_code == 404
