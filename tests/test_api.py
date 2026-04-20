@@ -68,6 +68,26 @@ def test_analyze_rejects_missing_text_column() -> None:
     assert "text" in response.json()["detail"].lower()
 
 
+def test_analyze_rejects_empty_csv() -> None:
+    response = client.post(
+        "/analyze",
+        files={"file": ("empty.csv", b"", "text/csv")},
+    )
+    assert response.status_code == 400
+    assert "empty" in response.json()["detail"].lower()
+
+
+def test_analyze_rejects_too_few_rows() -> None:
+    tiny_csv = b"text\nonly one row\n"
+    response = client.post(
+        "/analyze",
+        files={"file": ("tiny.csv", tiny_csv, "text/csv")},
+    )
+    assert response.status_code == 400
+    detail = response.json()["detail"].lower()
+    assert "usable" in detail or "at least" in detail
+
+
 def test_list_samples_returns_three_entries() -> None:
     response = client.get("/samples")
     assert response.status_code == 200

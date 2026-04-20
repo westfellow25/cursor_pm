@@ -18,9 +18,18 @@ The home page exposes "Try sample" buttons that load each bundled demo dataset a
 
 ## Quick start
 
+### Local Python
+
 ```bash
 pip install -r backend/requirements.txt
 python -m uvicorn backend.main:app --reload
+```
+
+### Docker
+
+```bash
+docker build -t product-discovery .
+docker run --rm -p 8000:8000 product-discovery
 ```
 
 Then open <http://127.0.0.1:8000>.

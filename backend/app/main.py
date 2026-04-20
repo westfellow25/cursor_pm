@@ -104,9 +104,12 @@ HOME_HTML = """<!doctype html>
       <strong>Or try a sample dataset:</strong>
       <div id="samples" style="margin-top:0.4rem; display: flex; flex-wrap: wrap; gap: 0.4rem;"></div>
     </div>
-    <div class="links" style="margin-top:0.9rem;">
+    <div class="links" style="margin-top:0.9rem; display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
       <a id="prdLink" class="disabled" target="_blank" rel="noopener">Download PRD</a>
+      <button id="copyPrdBtn" type="button" disabled>Copy PRD</button>
       <a id="jiraLink" class="disabled" target="_blank" rel="noopener">Download Jira tickets</a>
+      <button id="copyJiraBtn" type="button" disabled>Copy Jira</button>
+      <span id="copyStatus" class="muted" style="font-size: 0.85rem;"></span>
     </div>
   </div>
 
@@ -137,6 +140,25 @@ HOME_HTML = """<!doctype html>
     const rawEl = document.getElementById('raw');
     const prdLink = document.getElementById('prdLink');
     const jiraLink = document.getElementById('jiraLink');
+    const copyPrdBtn = document.getElementById('copyPrdBtn');
+    const copyJiraBtn = document.getElementById('copyJiraBtn');
+    const copyStatus = document.getElementById('copyStatus');
+    let lastPrdText = '';
+    let lastJiraText = '';
+
+    async function copyText(text, label) {
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        copyStatus.textContent = `${label} copied to clipboard.`;
+      } catch (err) {
+        copyStatus.textContent = `Could not copy ${label}: ${err.message}`;
+      }
+      setTimeout(() => { copyStatus.textContent = ''; }, 2500);
+    }
+
+    copyPrdBtn.addEventListener('click', () => copyText(lastPrdText, 'PRD'));
+    copyJiraBtn.addEventListener('click', () => copyText(lastJiraText, 'Jira tickets'));
 
     function escapeHtml(str) {
       return String(str)
@@ -201,6 +223,10 @@ HOME_HTML = """<!doctype html>
       jiraLink.classList.add('disabled');
       prdLink.removeAttribute('href');
       jiraLink.removeAttribute('href');
+      copyPrdBtn.disabled = true;
+      copyJiraBtn.disabled = true;
+      lastPrdText = '';
+      lastJiraText = '';
 
       try {
         const response = await fetch('/analyze', { method: 'POST', body: formData });
@@ -220,6 +246,10 @@ HOME_HTML = """<!doctype html>
           prdLink.classList.remove('disabled');
           jiraLink.classList.remove('disabled');
         }
+        lastPrdText = data.prd_text || '';
+        lastJiraText = data.jira_tickets_text || '';
+        copyPrdBtn.disabled = !lastPrdText;
+        copyJiraBtn.disabled = !lastJiraText;
       } catch (error) {
         statusEl.className = 'status error';
         statusEl.textContent = `Error: ${error.message}`;

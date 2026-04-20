@@ -23,10 +23,27 @@ from feedback_ingestion import HashingEmbedder  # noqa: E402
 from generate_artifacts import build_artifact_content  # noqa: E402
 
 TEXT_COLUMN_CANDIDATES = ("text", "feedback")
+MAX_CSV_BYTES = 5 * 1024 * 1024  # 5 MB
+MAX_CSV_ROWS = 5000
+MIN_CSV_ROWS = 3
 
 
 def load_feedback_csv(file_bytes: bytes) -> pd.DataFrame:
-    df = pd.read_csv(BytesIO(file_bytes))
+    if len(file_bytes) == 0:
+        raise ValueError("CSV is empty.")
+    if len(file_bytes) > MAX_CSV_BYTES:
+        raise ValueError(
+            f"CSV is too large ({len(file_bytes) / 1024 / 1024:.1f} MB). "
+            f"The demo accepts up to {MAX_CSV_BYTES // 1024 // 1024} MB."
+        )
+
+    try:
+        df = pd.read_csv(BytesIO(file_bytes))
+    except pd.errors.EmptyDataError as exc:
+        raise ValueError("CSV is empty or has no header row.") from exc
+    except pd.errors.ParserError as exc:
+        raise ValueError(f"CSV could not be parsed: {exc}") from exc
+
     text_column = next((col for col in TEXT_COLUMN_CANDIDATES if col in df.columns), None)
     if not text_column:
         raise ValueError(
@@ -37,6 +54,17 @@ def load_feedback_csv(file_bytes: bytes) -> pd.DataFrame:
     df = df[df[text_column] != ""]
     if text_column != "text":
         df = df.rename(columns={text_column: "text"})
+
+    if len(df) < MIN_CSV_ROWS:
+        raise ValueError(
+            f"CSV has only {len(df)} usable feedback row(s). At least {MIN_CSV_ROWS} are required "
+            "for clustering to produce meaningful themes."
+        )
+    if len(df) > MAX_CSV_ROWS:
+        raise ValueError(
+            f"CSV has {len(df)} rows; the demo accepts up to {MAX_CSV_ROWS}. "
+            "For larger datasets, sample or split the file."
+        )
     return df.reset_index(drop=True)
 
 

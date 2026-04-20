@@ -338,49 +338,61 @@ def _risks(top: dict[str, object]) -> list[str]:
 def _jira_tickets(top: dict[str, object], solution: str) -> list[dict[str, str]]:
     keywords = list(top.get("keywords") or [])
     theme_short = " ".join(_presentable(word) for word in keywords[:2]) if keywords else str(top["theme_label"])
+    example_signal = str(top.get("example_signal") or "").strip()
+    keyword_phrase = ", ".join(keywords[:3]) if keywords else theme_short.lower()
+    example_clause = f' Reference signal: "{example_signal}".' if example_signal else ""
+
     return [
         {
-            "title": f"[Frontend] Improve {theme_short} workflow UX",
+            "title": f"[Frontend] Rework {theme_short} UX",
             "description": (
-                "Implement UI updates for the top opportunity cluster, including pagination for large result sets, "
-                "skeleton/loading/empty/error states for each primary view, and client-side caching for repeat visits "
-                "to high-traffic dashboards where data freshness requirements allow. "
-                f"Align interaction details with the proposed solution: {solution}"
+                f"Ship UI changes that directly target the cluster of complaints around {keyword_phrase}. "
+                "Audit the current flow against the reported friction, redesign the affected screens to remove "
+                "dead ends, add clear inline guidance and error recovery, and cover loading/empty/error states "
+                f"consistently.{example_clause} Align interaction details with the proposed solution: {solution}"
             ),
             "acceptance": (
-                "Updated UX shipped behind a feature flag, key user flow can be completed in <=3 clicks, "
-                "pagination works for large datasets, and loading/skeleton/empty/error states are fully implemented "
-                "for dashboard and detail views."
+                f"UX changes shipped behind a feature flag; the top reported {theme_short} friction is removed in "
+                "usability testing; loading/empty/error states covered; key task completable in <=3 clicks."
             ),
         },
         {
-            "title": f"[Backend] Support {theme_short} workflow reliability",
+            "title": f"[Backend] Harden {theme_short} reliability",
             "description": (
-                "Implement or optimize backend endpoints/services required by the new workflow. "
-                "Prioritize query optimization, response caching for expensive aggregate reads, and async jobs for "
-                "long-running calculations/exports tied to top-cluster friction."
+                f"Investigate and fix the backend causes behind {keyword_phrase}. Review the relevant endpoints "
+                "for error paths and edge cases surfaced by the cluster, add structured logging and actionable "
+                "error messages, and ensure retries/idempotency where applicable so the frontend can present "
+                "clear recovery paths."
             ),
             "acceptance": (
-                "API contracts documented, p95 latency meets target, query plans reviewed for heavy endpoints, "
-                "cache hit ratio monitored, async jobs idempotent/retriable, and automated tests cover happy path + failure path."
+                f"Error rate for {theme_short} flows trends down post-release; actionable error messages returned "
+                "to the client; p95 latency for the affected endpoints meets target; automated tests cover happy "
+                "path and the top failure modes from the cluster."
             ),
         },
         {
-            "title": "[Analytics] Instrument top-cluster success funnel",
+            "title": f"[Analytics] Instrument {theme_short} funnel",
             "description": (
-                "Add event tracking for discovery, workflow completion, and abandonment signals tied to this initiative."
+                f"Add event tracking for the {theme_short} flow so we can measure baseline vs. post-release "
+                "behavior. Capture entry, completion, abandonment, and self-service recovery events, tagged so "
+                "we can slice by user segment and source."
             ),
             "acceptance": (
-                "Dashboard shows baseline vs post-release funnel metrics and events are validated in staging."
+                f"Dashboard shows baseline vs post-release funnel metrics for {theme_short}; events validated "
+                "in staging; segment breakdown available in the PM reporting workspace."
             ),
         },
         {
-            "title": "[QA] Validate end-to-end behavior for cluster-driven improvements",
+            "title": f"[QA] Validate {theme_short} end-to-end",
             "description": (
-                "Create QA plan covering regression, edge cases, and accessibility for the updated workflow."
+                f"Create a QA plan covering the top failure modes reported in the {theme_short} cluster, "
+                "regression for adjacent flows, and accessibility checks on the primary screens touched by "
+                "the fix."
             ),
             "acceptance": (
-                "Test plan executed with no Sev-1/Sev-2 defects open and accessibility checks pass for critical screens."
+                "Test plan executed with no Sev-1/Sev-2 defects open; accessibility checks pass for critical "
+                f"screens; the specific {theme_short} failure modes reported by users are reproducible pre-fix "
+                "and resolved post-fix."
             ),
         },
         {
