@@ -88,6 +88,11 @@ HOME_HTML = """<!doctype html>
     details pre { white-space: pre-wrap; background: #f3f4f6; padding: 0.7rem; border-radius: 8px; font-size: 0.85rem; }
     .status { min-height: 1.2rem; color: #2563eb; font-size: 0.92rem; }
     .status.error { color: #dc2626; }
+    .dropzone { margin-top: 0.4rem; padding: 1.1rem; border: 2px dashed #c7d2fe; border-radius: 10px; text-align: center; color: #6b7280; cursor: pointer; background: #fafbff; transition: background 0.15s, border-color 0.15s; }
+    .dropzone.dragging { background: #eef2ff; border-color: #6366f1; color: #1f2430; }
+    .dropzone.has-file { border-style: solid; color: #1f2430; background: #f0fdf4; border-color: #86efac; }
+    .preview { margin-top: 0.5rem; }
+    .preview pre { white-space: pre-wrap; background: #f8fafc; border: 1px solid #e4e7eb; padding: 0.8rem; border-radius: 8px; font-size: 0.82rem; max-height: 340px; overflow: auto; }
   </style>
 </head>
 <body>
@@ -97,8 +102,14 @@ HOME_HTML = """<!doctype html>
   <div class="card">
     <label for="fileInput"><strong>Upload CSV</strong></label>
     <p class="muted" style="margin-top:0.25rem;">CSV must contain a <code>text</code> column (or legacy <code>feedback</code>). Optional columns: <code>feedback_id</code>, <code>source</code>.</p>
-    <input id="fileInput" type="file" accept=".csv" />
-    <button id="analyzeBtn">Analyze</button>
+    <div id="dropZone" class="dropzone">
+      <span id="dropHint">Drop a CSV here or click to choose</span>
+      <input id="fileInput" type="file" accept=".csv" hidden />
+    </div>
+    <div style="margin-top: 0.6rem; display: flex; gap: 0.5rem; align-items: center;">
+      <button id="analyzeBtn">Analyze</button>
+      <span id="fileName" class="muted" style="font-size: 0.9rem;"></span>
+    </div>
     <p id="status" class="status"></p>
     <div style="margin-top:0.6rem;">
       <strong>Or try a sample dataset:</strong>
@@ -124,6 +135,19 @@ HOME_HTML = """<!doctype html>
   </div>
 
   <div class="card">
+    <h2 style="margin-top:0;">Artifacts</h2>
+    <p class="muted" style="margin-top:0;">Generated PRD and Jira tickets from the latest analysis.</p>
+    <details id="prdPreview" class="preview">
+      <summary>PRD.md</summary>
+      <pre id="prdPre">Run an analysis to see the PRD.</pre>
+    </details>
+    <details id="jiraPreview" class="preview">
+      <summary>jira_tickets.md</summary>
+      <pre id="jiraPre">Run an analysis to see the Jira tickets.</pre>
+    </details>
+  </div>
+
+  <div class="card">
     <h2 style="margin-top:0;">Raw response</h2>
     <details>
       <summary class="muted">Show JSON</summary>
@@ -134,10 +158,15 @@ HOME_HTML = """<!doctype html>
   <script>
     const analyzeBtn = document.getElementById('analyzeBtn');
     const fileInput = document.getElementById('fileInput');
+    const dropZone = document.getElementById('dropZone');
+    const dropHint = document.getElementById('dropHint');
+    const fileNameEl = document.getElementById('fileName');
     const statusEl = document.getElementById('status');
     const clustersEl = document.getElementById('clusters');
     const actionEl = document.getElementById('action');
     const rawEl = document.getElementById('raw');
+    const prdPre = document.getElementById('prdPre');
+    const jiraPre = document.getElementById('jiraPre');
     const prdLink = document.getElementById('prdLink');
     const jiraLink = document.getElementById('jiraLink');
     const copyPrdBtn = document.getElementById('copyPrdBtn');
@@ -145,6 +174,44 @@ HOME_HTML = """<!doctype html>
     const copyStatus = document.getElementById('copyStatus');
     let lastPrdText = '';
     let lastJiraText = '';
+
+    function setSelectedFile(file) {
+      if (!file) {
+        fileNameEl.textContent = '';
+        dropZone.classList.remove('has-file');
+        dropHint.textContent = 'Drop a CSV here or click to choose';
+        return;
+      }
+      fileNameEl.textContent = file.name + ' · ' + Math.round(file.size / 1024) + ' KB';
+      dropZone.classList.add('has-file');
+      dropHint.textContent = 'Ready: ' + file.name + ' (click to replace)';
+    }
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+    dropZone.tabIndex = 0;
+    fileInput.addEventListener('change', () => setSelectedFile(fileInput.files[0]));
+    ['dragenter', 'dragover'].forEach(evt => dropZone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragging');
+    }));
+    ['dragleave', 'drop'].forEach(evt => dropZone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragging');
+    }));
+    dropZone.addEventListener('drop', (e) => {
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith('.csv')) {
+        statusEl.className = 'status error';
+        statusEl.textContent = 'Please drop a .csv file.';
+        return;
+      }
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      fileInput.files = dt.files;
+      setSelectedFile(file);
+    });
 
     async function copyText(text, label) {
       if (!text) return;
@@ -250,6 +317,8 @@ HOME_HTML = """<!doctype html>
         lastJiraText = data.jira_tickets_text || '';
         copyPrdBtn.disabled = !lastPrdText;
         copyJiraBtn.disabled = !lastJiraText;
+        prdPre.textContent = lastPrdText || 'No PRD generated.';
+        jiraPre.textContent = lastJiraText || 'No Jira tickets generated.';
       } catch (error) {
         statusEl.className = 'status error';
         statusEl.textContent = `Error: ${error.message}`;
