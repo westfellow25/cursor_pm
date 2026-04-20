@@ -1,42 +1,52 @@
 # AI Product Discovery MVP
 
-This MVP now runs entirely from FastAPI (no Node/npm required). The backend serves a minimal vanilla JS UI for CSV upload, analysis, and artifact downloads.
+Upload a CSV of user feedback → get ranked opportunity clusters, a draft PRD, and a set of Jira tickets.
 
-## API + UI endpoints
+Runs entirely from FastAPI. No Node/npm, no OpenAI key required (the default pipeline uses a local hashing embedder).
 
-- `GET /` → HTML UI with:
-  - CSV file upload
-  - Analyze button
-  - JSON results display
-  - Download links for PRD/Jira markdown
-- `POST /analyze` → runs analysis pipeline from uploaded CSV (`file` form field)
-- `GET /download/prd` → download latest generated PRD markdown
-- `GET /download/jira` → download latest generated Jira markdown
-- `GET /health` → health check
+## API + UI
 
-## Quick start (Windows-friendly)
+- `GET /` — minimal vanilla JS UI: CSV upload, analysis result cards, PRD/Jira download links.
+- `POST /analyze` — runs the analysis pipeline on the uploaded CSV (`file` form field). Returns JSON including a `run_id`.
+- `GET /download/prd/{run_id}` — PRD markdown for a specific run.
+- `GET /download/jira/{run_id}` — Jira tickets markdown for a specific run.
+- `GET /health` — health check.
 
-From the repository root:
+## Quick start
 
-```powershell
-py -m pip install -r requirements.txt
-py -m uvicorn backend.main:app --reload
+```bash
+pip install -r backend/requirements.txt
+python -m uvicorn backend.main:app --reload
 ```
 
-Then open:
+Then open <http://127.0.0.1:8000>.
 
-- <http://127.0.0.1:8000>
+## CSV format
 
-## CSV requirements
+Only the feedback text is required.
 
-`POST /analyze` uses the existing analysis pipeline input format:
+| column        | required | notes                                                                 |
+|---------------|----------|-----------------------------------------------------------------------|
+| `text`        | yes      | The raw feedback string. Accepts legacy column name `feedback` too.   |
+| `feedback_id` | no       | Auto-generated as `f001`, `f002`, … if missing.                       |
+| `source`      | no       | Defaults to `unknown`.                                                |
+
+Example:
 
 ```csv
-feedback_id,text,source
-f001,"The dashboard is slow when loading monthly reports",web
+text,source
+"The onboarding flow is confusing for first-time users",web
+"I can't connect Slack and there is no useful error message",support
+```
+
+## Tests
+
+```bash
+pip install pytest httpx
+python -m pytest
 ```
 
 ## Notes
 
-- `OPENAI_API_KEY` must be set in your environment for embedding/analysis steps.
-- Download links become available after a successful `/analyze` run.
+- Per-run artifacts (PRD, Jira) are stored in memory keyed by `run_id`. The UI surfaces the `run_id` after each analysis so multiple users don't overwrite each other's downloads.
+- Cluster labels and the proposed solution are derived from the actual data (TF-IDF over the cluster vs. the corpus) — no hardcoded themes.

@@ -34,9 +34,14 @@ class ClusterResult:
 
 
 class CSVFeedbackParser:
-    """Loads feedback records from a CSV file."""
+    """Loads feedback records from a CSV file.
 
-    REQUIRED_FIELDS = {"feedback_id", "text", "source"}
+    Required: a column with the feedback text, named either `text` or `feedback`.
+    Optional: `feedback_id` (auto-generated as f001, f002, ... if missing) and
+    `source` (defaults to "unknown").
+    """
+
+    TEXT_FIELD_CANDIDATES = ("text", "feedback")
 
     def parse(self, csv_path: str | Path) -> List[FeedbackRecord]:
         csv_path = Path(csv_path)
@@ -45,22 +50,21 @@ class CSVFeedbackParser:
         with csv_path.open("r", encoding="utf-8", newline="") as handle:
             reader = csv.DictReader(handle)
             fieldnames = set(reader.fieldnames or [])
-            missing = self.REQUIRED_FIELDS - fieldnames
-            if missing:
-                missing_cols = ", ".join(sorted(missing))
-                raise ValueError(f"Missing required CSV fields: {missing_cols}")
+            text_field = next((f for f in self.TEXT_FIELD_CANDIDATES if f in fieldnames), None)
+            if not text_field:
+                raise ValueError(
+                    "CSV must contain a 'text' column (or legacy 'feedback' column) with user feedback strings."
+                )
 
-            for row in reader:
-                text = (row.get("text") or "").strip()
+            for index, row in enumerate(reader, start=1):
+                text = (row.get(text_field) or "").strip()
                 if not text:
                     continue
 
+                feedback_id = (row.get("feedback_id") or "").strip() or f"f{index:03d}"
+                source = (row.get("source") or "unknown").strip() or "unknown"
                 records.append(
-                    FeedbackRecord(
-                        feedback_id=(row.get("feedback_id") or "").strip(),
-                        text=text,
-                        source=(row.get("source") or "unknown").strip() or "unknown",
-                    )
+                    FeedbackRecord(feedback_id=feedback_id, text=text, source=source)
                 )
 
         return records

@@ -1,14 +1,14 @@
 # Jira Tickets
 
-## Ticket 1: [Frontend] Improve Dashboard performance issues workflow UX
+## Ticket 1: [Frontend] Improve Onboarding Flow workflow UX
 
 **Description**
-Implement UI updates for the top opportunity cluster, including pagination for large result sets, skeleton/loading/empty/error states for each primary view, and client-side caching for repeat visits to high-traffic dashboards where data freshness requirements allow. Align interaction details with the proposed solution: Improve dashboard and report performance by optimizing heavy queries, adding pagination for large views, caching high-traffic summaries, and moving long-running calculations to async jobs so pages load quickly under real usage.
+Implement UI updates for the top opportunity cluster, including pagination for large result sets, skeleton/loading/empty/error states for each primary view, and client-side caching for repeat visits to high-traffic dashboards where data freshness requirements allow. Align interaction details with the proposed solution: Address the repeated user friction around onboarding, flow, confusing by streamlining the affected workflow, removing manual steps where possible, and improving the reliability and clarity of the experience so users can complete the task without hitting the same issue again. Start with a focused fix for the top signal ("The onboarding flow is confusing for first-time users") and extend improvements to adjacent pain points in this cluster.
 
 **Acceptance Criteria**
 Updated UX shipped behind a feature flag, key user flow can be completed in <=3 clicks, pagination works for large datasets, and loading/skeleton/empty/error states are fully implemented for dashboard and detail views.
 
-## Ticket 2: [Backend] Support Dashboard performance issues workflow reliability
+## Ticket 2: [Backend] Support Onboarding Flow workflow reliability
 
 **Description**
 Implement or optimize backend endpoints/services required by the new workflow. Prioritize query optimization, response caching for expensive aggregate reads, and async jobs for long-running calculations/exports tied to top-cluster friction.

@@ -1,22 +1,22 @@
 # Product Requirements Document
 
-## Feature: Speed Up Dashboard Loading
+## Feature: Improve Onboarding Flow Experience
 
 ## Problem Summary
-Users are repeatedly reporting friction in this workflow cluster. The most common signals point to issues around when, dashboard, slow.
+Users are repeatedly reporting friction in this workflow cluster. The most common signals point to issues around onboarding, flow, confusing.
 
 ## Target Users
-Active users impacted by cluster 4 pain points (~40% of sampled feedback), especially users running this workflow weekly.
+Active users impacted by cluster 1 pain points (~50% of sampled feedback), especially users running this workflow weekly.
 
 ## Proposed Solution
-Improve dashboard and report performance by optimizing heavy queries, adding pagination for large views, caching high-traffic summaries, and moving long-running calculations to async jobs so pages load quickly under real usage.
+Address the repeated user friction around onboarding, flow, confusing by streamlining the affected workflow, removing manual steps where possible, and improving the reliability and clarity of the experience so users can complete the task without hitting the same issue again. Start with a focused fix for the top signal ("The onboarding flow is confusing for first-time users") and extend improvements to adjacent pain points in this cluster.
 
 ## Context
-- Theme label: Dashboard performance issues
-- Cluster ID: 4
+- Theme label: Onboarding Flow workflow issues
+- Cluster ID: 1
 - Opportunity score: 10.0
-- Frequency: 4 / 10 feedback items
-- Severity: 1.1
+- Frequency: 3 / 6 feedback items
+- Severity: 1.07
 
 ## Success Metrics
 - Reduce related support tickets by at least 10% within 30 days of launch.
@@ -26,4 +26,4 @@ Improve dashboard and report performance by optimizing heavy queries, adding pag
 ## Risks
 - Scope creep while addressing adjacent complaints from nearby clusters.
 - Potential regression in existing workflow steps without careful QA coverage.
-- Adoption risk if solution discoverability does not improve for cluster 4 users.
+- Adoption risk if solution discoverability does not improve for cluster 1 users.

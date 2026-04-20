@@ -47,10 +47,6 @@ SENTIMENT_WORDS = {
     "hate",
 }
 
-PERFORMANCE_TERMS = {"dashboard", "slow", "loading", "latency", "performance", "lag", "timeout"}
-EVIDENCE_KEYWORD_GATE = {"dashboard", "slow", "loading", "performance", "latency", "report"}
-OFF_THEME_TERMS = {"search", "export", "layout", "crash"}
-
 URGENCY_TERMS = {
     "blocked": 1.8,
     "broken": 1.7,
@@ -137,97 +133,93 @@ def _top_keywords(texts: list[str], limit: int = 3) -> list[str]:
     return [token for token, _ in counts.most_common(limit)]
 
 
-def _theme_label(texts: list[str]) -> str:
-    meaningful_tokens = [
+def _meaningful_tokens(texts: list[str]) -> list[str]:
+    return [
         token
         for text in texts
         for token in _tokenize(text)
         if len(token) > 2 and token not in STOPWORDS and token not in SENTIMENT_WORDS
     ]
-    token_set = set(meaningful_tokens)
-    counts = Counter(meaningful_tokens)
 
-    perf_hits = {"slow", "loading", "latency", "lag", "performance", "timeout"} & token_set
-    if ("dashboard" in token_set and perf_hits) or len(perf_hits) >= 2:
-        return "Dashboard performance issues"
-    if {"search", "filter", "find", "index", "query"} & token_set:
-        return "Search and filtering gaps"
-    if {"export", "report", "download", "csv"} & token_set:
-        return "Reporting export workflow friction"
-    if {"integration", "integrations", "sync", "api", "crm"} & token_set:
-        return "Integration sync reliability gaps"
-    if {"permission", "permissions", "access", "role", "approval"} & token_set:
-        return "Access control workflow issues"
 
-    top_keywords = [token for token, _ in counts.most_common(3)]
-    if not top_keywords:
+def _distinctive_keywords(
+    cluster_texts: list[str],
+    corpus_by_cluster: dict[int, list[str]] | None,
+    limit: int = 3,
+) -> list[str]:
+    """Top keywords for a cluster, scored by TF in the cluster * IDF across clusters.
+
+    Falls back to plain frequency when no cross-cluster corpus is available.
+    """
+    local_counts = Counter(_meaningful_tokens(cluster_texts))
+    if not local_counts:
+        return []
+
+    if not corpus_by_cluster or len(corpus_by_cluster) <= 1:
+        return [token for token, _ in local_counts.most_common(limit)]
+
+    num_clusters = len(corpus_by_cluster)
+    doc_freq: Counter[str] = Counter()
+    for other_texts in corpus_by_cluster.values():
+        for token in set(_meaningful_tokens(other_texts)):
+            doc_freq[token] += 1
+
+    def score(token: str) -> float:
+        tf = local_counts[token]
+        df = doc_freq.get(token, 1)
+        return tf * math.log((1 + num_clusters) / (1 + df)) + tf * 0.01
+
+    ranked = sorted(local_counts, key=score, reverse=True)
+    return ranked[:limit]
+
+
+def _theme_label(
+    texts: list[str],
+    corpus_by_cluster: dict[int, list[str]] | None = None,
+) -> str:
+    keywords = _distinctive_keywords(texts, corpus_by_cluster, limit=2)
+    if not keywords:
         return "Core workflow experience issues"
-    label_tokens = [word.capitalize() for word in top_keywords[:2]]
-    return " ".join([*label_tokens, "workflow", "issues"])
+    label_tokens = [word.capitalize() for word in keywords]
+    return " ".join([*label_tokens, "workflow issues"]) if len(label_tokens) >= 2 else f"{label_tokens[0]} workflow issues"
 
 
-def _proposed_solution(theme_label: str, example_signal: str, texts: list[str]) -> str:
-    top_cluster_text = " ".join([theme_label, example_signal, *texts])
-    token_set = set(_tokenize(top_cluster_text))
+def _proposed_solution(
+    theme_label: str,
+    example_signal: str,
+    texts: list[str],
+    keywords: list[str] | None = None,
+) -> str:
+    """Generic, data-driven proposed solution using the top keywords of the cluster."""
+    keywords = keywords or _distinctive_keywords(texts, None, limit=3)
+    if keywords:
+        keyword_phrase = ", ".join(keywords)
+        keyword_clause = f" around {keyword_phrase}"
+    else:
+        keyword_clause = ""
 
-    # Ensure recommendations stay anchored to the dominant pain signals from the top cluster.
-    if {"export", "button", "report", "download"} & token_set and {"hard", "find", "discover"} & token_set:
-        return (
-            "Improve UI discoverability for exports by placing the action in primary navigation and report headers, "
-            "adding keyboard shortcuts, and showing first-run tooltips so users can find and complete export tasks "
-            "without hunting through menus."
-        )
-    if {"slow", "loading", "lag", "latency", "performance", "timeout"} & token_set:
-        return (
-            "Improve dashboard and report performance by optimizing heavy queries, adding pagination for large views, "
-            "caching high-traffic summaries, and moving long-running calculations to async jobs so pages load quickly "
-            "under real usage." 
-        )
-    if {"search", "punctuation", "filter", "index"} & token_set:
-        return (
-            "Implement an upgraded discovery experience with smarter indexing, typo/punctuation tolerance, "
-            "and saved filters so users can quickly locate records and repeat common queries without manual rework."
-        )
-    if {"export", "report", "csv", "download"} & token_set:
-        return (
-            "Build a guided reporting flow with prominent export actions, reusable report templates, and scheduled "
-            "delivery so customers can consistently share insights without hunting for controls each time."
-        )
-    if {"notify", "notification", "urgent", "late"} & token_set:
-        return (
-            "Redesign the notifications pipeline with priority-aware delivery windows, configurable alert channels, "
-            "and digest settings so urgent updates arrive on time while routine updates remain manageable."
-        )
-    if {"crash", "timeout", "fails", "error"} & token_set:
-        return (
-            "Prioritize reliability hardening for the affected workflow by adding upload and auth guardrails, "
-            "clear retry paths, and proactive monitoring to reduce failure rates and user disruption."
-        )
     return (
-        "Deliver a focused workflow improvement initiative that removes repeated friction points, adds clearer "
-        "guidance in key steps, and improves consistency for common customer tasks."
+        f"Address the repeated user friction{keyword_clause} by streamlining the affected workflow, "
+        "removing manual steps where possible, and improving the reliability and clarity of the experience "
+        "so users can complete the task without hitting the same issue again. "
+        f"Start with a focused fix for the top signal (\"{example_signal.strip()}\") and extend improvements "
+        "to adjacent pain points in this cluster."
     )
 
 
-def _feature_name(theme_label: str) -> str:
-    theme_tokens = [token for token in _tokenize(theme_label) if token not in STOPWORDS]
-    token_set = set(theme_tokens)
+def _feature_name(theme_label: str, keywords: list[str] | None = None) -> str:
+    if keywords:
+        leading_terms = [word.capitalize() for word in keywords[:2]]
+    else:
+        leading_terms = [
+            token.capitalize()
+            for token in _tokenize(theme_label)
+            if token not in STOPWORDS and token not in SENTIMENT_WORDS
+        ][:2]
 
-    if {"dashboard", "performance", "latency", "slow", "loading"} & token_set:
-        return "Speed Up Dashboard Loading"
-    if {"search", "filter", "query", "index"} & token_set:
-        return "Improve Search Accuracy"
-    if {"export", "report", "download", "csv"} & token_set:
-        return "Simplify Report Exports"
-    if {"integration", "integrations", "sync", "api", "crm"} & token_set:
-        return "Automate Integration Sync"
-    if {"permission", "permissions", "access", "role", "approval"} & token_set:
-        return "Strengthen Access Controls"
-
-    leading_terms = [token.capitalize() for token in theme_tokens[:2]]
     if not leading_terms:
         return "Improve Core Workflow"
-    return f"Improve {' '.join(leading_terms)} Workflow"
+    return f"Improve {' '.join(leading_terms)} Experience"
 
 
 def _target_users(top: dict[str, object], total_records: int) -> str:
@@ -256,10 +248,11 @@ def _risks(top: dict[str, object]) -> list[str]:
 
 
 def _jira_tickets(top: dict[str, object], solution: str) -> list[dict[str, str]]:
-    theme = str(top["theme_label"])
+    keywords = list(top.get("keywords") or [])
+    theme_short = " ".join(word.capitalize() for word in keywords[:2]) if keywords else str(top["theme_label"])
     return [
         {
-            "title": f"[Frontend] Improve {theme} workflow UX",
+            "title": f"[Frontend] Improve {theme_short} workflow UX",
             "description": (
                 "Implement UI updates for the top opportunity cluster, including pagination for large result sets, "
                 "skeleton/loading/empty/error states for each primary view, and client-side caching for repeat visits "
@@ -273,7 +266,7 @@ def _jira_tickets(top: dict[str, object], solution: str) -> list[dict[str, str]]
             ),
         },
         {
-            "title": f"[Backend] Support {theme} workflow reliability",
+            "title": f"[Backend] Support {theme_short} workflow reliability",
             "description": (
                 "Implement or optimize backend endpoints/services required by the new workflow. "
                 "Prioritize query optimization, response caching for expensive aggregate reads, and async jobs for "
@@ -328,24 +321,31 @@ def analyze_feedback(csv_path: str | Path = "example_data/feedback.csv", n_clust
     records_by_id = {record.feedback_id: record for record in records}
     raw_scores: dict[int, float] = {}
     cluster_metrics: dict[int, dict[str, object]] = {}
+    corpus_by_cluster: dict[int, list[str]] = {
+        cluster_id: [records_by_id[feedback_id].text for feedback_id in ids if feedback_id in records_by_id]
+        for cluster_id, ids in grouped_ids.items()
+        if cluster_id != -1
+    }
 
     for cluster_id, ids in grouped_ids.items():
         if cluster_id == -1:
             continue
-        texts = [records_by_id[feedback_id].text for feedback_id in ids if feedback_id in records_by_id]
-        example_signal = next((records_by_id[feedback_id].text for feedback_id in ids if feedback_id in records_by_id), "")
+        texts = corpus_by_cluster[cluster_id]
+        example_signal = texts[0] if texts else ""
         frequency = len(texts)
         severity = _cluster_severity(texts)
         prevalence = frequency / max(1, len(records))
         weighted_score = (0.65 * frequency) + (0.35 * severity * 3.0)
         raw_score = weighted_score * math.sqrt(1 + prevalence)
         raw_scores[cluster_id] = raw_score
+        keywords = _distinctive_keywords(texts, corpus_by_cluster, limit=3)
         cluster_metrics[cluster_id] = {
             "cluster_id": cluster_id,
             "texts": texts,
             "ids": [feedback_id for feedback_id in ids if feedback_id in records_by_id],
             "example_signal": example_signal,
-            "theme_label": _theme_label(texts),
+            "theme_label": _theme_label(texts, corpus_by_cluster),
+            "keywords": keywords,
             "frequency": frequency,
             "severity": round(severity, 2),
         }
@@ -365,7 +365,12 @@ def analyze_feedback(csv_path: str | Path = "example_data/feedback.csv", n_clust
 
     top = ranked_clusters[0] if ranked_clusters else None
     proposed_solution = (
-        _proposed_solution(top["theme_label"], top["example_signal"], top["texts"])
+        _proposed_solution(
+            top["theme_label"],
+            top["example_signal"],
+            top["texts"],
+            keywords=list(top.get("keywords") or []),
+        )
         if top
         else ""
     )
@@ -421,27 +426,6 @@ def _refine_clusters(records, cluster_results):
     similarity_by_id = {row.feedback_id: row.similarity_to_centroid for row in cluster_results}
     assignments = {row.feedback_id: row.cluster_id for row in cluster_results}
     next_cluster_id = max((row.cluster_id for row in cluster_results if row.cluster_id >= 0), default=-1) + 1
-
-    perf_ids = [
-        feedback_id
-        for feedback_id, text in text_by_id.items()
-        if PERFORMANCE_TERMS & set(_tokenize(text))
-    ]
-    if perf_ids:
-        anchor_id = next(
-            (feedback_id for feedback_id in perf_ids if {"dashboard", "slow"} <= set(_tokenize(text_by_id[feedback_id]))),
-            perf_ids[0],
-        )
-        anchor_vector = vectors[index_by_id[anchor_id]]
-        performance_cluster_ids = []
-        for feedback_id in perf_ids:
-            similarity = _cosine_similarity(anchor_vector, vectors[index_by_id[feedback_id]])
-            if feedback_id == anchor_id or similarity >= 0.45:
-                performance_cluster_ids.append(feedback_id)
-        for feedback_id in performance_cluster_ids:
-            assignments[feedback_id] = next_cluster_id
-            similarity_by_id[feedback_id] = 1.0 if feedback_id == anchor_id else max(similarity_by_id[feedback_id], 0.65)
-        next_cluster_id += 1
 
     misc_ids = [feedback_id for feedback_id, cluster_id in assignments.items() if cluster_id == -1]
     if len(misc_ids) > 2:
@@ -657,18 +641,17 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
         "slows task completion, and elevates support risk if left unresolved."
     )
     print("Acceptance criteria :")
-    print("  - Dashboard page-load p95 improves from <baseline_before_ms> ms to <= <target_after_ms> ms in production.")
-    print("  - Dashboard API p95 latency improves from <baseline_before_ms> ms to <= <target_after_ms> ms for top workflows.")
     print("  - Users complete the target task without escalation/workaround in >= <target_success_rate>% of sessions.")
     print("  - Support tickets linked to this pain point decrease by >= <target_ticket_reduction>% vs pre-release baseline.")
-    print("  - PM dashboard tracks baseline vs after-release metrics for load time, API latency, adoption, and reliability.")
+    print("  - Follow-up CSAT for this workflow improves by >= <target_csat_delta> points in the 30 days after launch.")
+    print("  - PM dashboard tracks baseline vs after-release metrics for adoption, completion rate, and reliability.")
     print("Open questions      :")
     print("  - Which user segment in this cluster should we prioritize for beta testing?")
     print("  - What success threshold (adoption, CSAT, ticket reduction) defines launch readiness?")
     print("  - Are there platform-specific constraints (web/mobile/api) that require phased rollout?")
 
     print("\n=== PRODUCT SPEC (AUTO-GENERATED) ===")
-    print(f"Feature name        : {_feature_name(top['theme_label'])}")
+    print(f"Feature name        : {_feature_name(top['theme_label'], list(top.get('keywords') or []))}")
     print(f"Problem summary     : {_problem_statement(top['texts'])}")
     print(f"Target users        : {_target_users(top, len(records))}")
     print(f"Proposed solution   : {proposed_solution}")
@@ -686,24 +669,21 @@ def run_demo(csv_path: str | Path = "example_data/feedback.csv", n_clusters: int
         print(f"Acceptance criteria : {ticket['acceptance']}")
 
     print(_divider("5) SUPPORTING EVIDENCE"))
-    evidence_pairs = [(record.feedback_id, record.text) for record in records]
-    evidence_count = min(5, len(evidence_pairs))
-    if evidence_pairs:
+    cluster_ids = list(top.get("ids") or [])
+    cluster_pairs = [
+        (feedback_id, next((r.text for r in records if r.feedback_id == feedback_id), ""))
+        for feedback_id in cluster_ids
+    ]
+    cluster_pairs = [(fid, quote) for fid, quote in cluster_pairs if quote]
+    evidence_count = min(5, len(cluster_pairs))
+    if cluster_pairs:
         embedder = HashingEmbedder(dimensions=128)
-        quote_vectors = embedder.embed([quote for _, quote in evidence_pairs])
-        theme_anchor = (top.get("theme_label") or "").strip() or top["example_signal"]
-        theme_vector = embedder.embed([theme_anchor])[0]
-        scored_pairs = []
-        for (feedback_id, quote), vector in zip(evidence_pairs, quote_vectors):
-            quote_tokens = set(_tokenize(quote))
-            if not (EVIDENCE_KEYWORD_GATE & quote_tokens):
-                continue
-            if OFF_THEME_TERMS & quote_tokens:
-                continue
-
-            similarity = _cosine_similarity(theme_vector, vector)
-            scored_pairs.append((similarity, feedback_id, quote))
-
+        quote_vectors = embedder.embed([quote for _, quote in cluster_pairs])
+        centroid_vec = _centroid(quote_vectors)
+        scored_pairs = [
+            (_cosine_similarity(centroid_vec, vector), feedback_id, quote)
+            for (feedback_id, quote), vector in zip(cluster_pairs, quote_vectors)
+        ]
         selected_evidence = _select_supporting_evidence(scored_pairs, evidence_count=evidence_count)
         for feedback_id, quote in selected_evidence:
             print(f'  - [{feedback_id}] "{quote}"')

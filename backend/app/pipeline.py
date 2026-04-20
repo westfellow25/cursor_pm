@@ -7,61 +7,37 @@ from tempfile import NamedTemporaryFile
 
 import pandas as pd
 
-from .clustering import cluster_feedback
-from .openai_client import embed_texts
-from .schemas import AnalyzeResponse, DiscoveryResponse, OpportunitySummary
+from .schemas import AnalyzeResponse, OpportunitySummary
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
 from e2e_demo import (  # noqa: E402
-    EVIDENCE_KEYWORD_GATE,
-    OFF_THEME_TERMS,
+    _centroid,
+    _cosine_similarity,
     _select_supporting_evidence,
-    _tokenize,
     analyze_feedback,
 )
+from feedback_ingestion import HashingEmbedder  # noqa: E402
 from generate_artifacts import build_artifact_content  # noqa: E402
 
-REQUIRED_COLUMNS = {"feedback"}
+TEXT_COLUMN_CANDIDATES = ("text", "feedback")
 
 
 def load_feedback_csv(file_bytes: bytes) -> pd.DataFrame:
     df = pd.read_csv(BytesIO(file_bytes))
-    missing = REQUIRED_COLUMNS - set(df.columns)
-    if missing:
-        raise ValueError(f"Missing required columns: {', '.join(sorted(missing))}")
-    df = df.dropna(subset=["feedback"]).copy()
-    df["feedback"] = df["feedback"].astype(str).str.strip()
-    df = df[df["feedback"] != ""]
-    return df.reset_index(drop=True)
-
-
-def generate_discovery(df: pd.DataFrame) -> DiscoveryResponse:
-    texts = df["feedback"].tolist()
-    embeddings = embed_texts(texts)
-    clusters = cluster_feedback(df, embeddings)
-
-    opportunities: list[OpportunitySummary] = []
-    for cluster_id, indexes in sorted(clusters.items(), key=lambda item: len(item[1]), reverse=True):
-        cluster_texts = [texts[i] for i in indexes]
-        representative = cluster_texts[0]
-        theme = representative[:120]
-        opportunities.append(
-            OpportunitySummary(
-                cluster_id=cluster_id,
-                size=len(indexes),
-                theme=theme,
-                representative_feedback=representative,
-            )
+    text_column = next((col for col in TEXT_COLUMN_CANDIDATES if col in df.columns), None)
+    if not text_column:
+        raise ValueError(
+            "CSV must contain a 'text' column (or legacy 'feedback' column) with user feedback strings."
         )
-
-    return DiscoveryResponse(
-        total_feedback_items=len(df),
-        total_clusters=len(opportunities),
-        opportunities=opportunities,
-    )
+    df = df.dropna(subset=[text_column]).copy()
+    df[text_column] = df[text_column].astype(str).str.strip()
+    df = df[df[text_column] != ""]
+    if text_column != "text":
+        df = df.rename(columns={text_column: "text"})
+    return df.reset_index(drop=True)
 
 
 def _summarize_clusters(ranked_clusters: list[dict[str, object]]) -> list[OpportunitySummary]:
@@ -81,28 +57,40 @@ def _build_evidence(analysis: dict[str, object]) -> list[str]:
     if not top:
         return []
 
-    records = analysis["records"]
-    scored_pairs: list[tuple[float, str, str]] = []
-    theme_tokens = set(_tokenize(top["theme_label"]))
-    for record in records:
-        quote = record.text
-        quote_tokens = set(_tokenize(quote))
-        if not (EVIDENCE_KEYWORD_GATE & quote_tokens):
-            continue
-        if OFF_THEME_TERMS & quote_tokens:
-            continue
-        overlap = len(theme_tokens & quote_tokens) / max(1, len(theme_tokens))
-        scored_pairs.append((overlap, record.feedback_id, quote))
+    cluster_texts: list[str] = list(top.get("texts") or [])
+    cluster_ids: list[str] = list(top.get("ids") or [])
+    if not cluster_texts:
+        return []
 
-    selected = _select_supporting_evidence(scored_pairs, evidence_count=min(5, len(records)))
-    if selected:
-        return [quote for _, quote in selected]
-    return [record.text for record in records[:3]]
+    embedder = HashingEmbedder(dimensions=128)
+    vectors = embedder.embed(cluster_texts)
+    centroid_vec = _centroid(vectors)
+    scored_pairs = [
+        (_cosine_similarity(centroid_vec, vector), feedback_id, quote)
+        for feedback_id, quote, vector in zip(cluster_ids, cluster_texts, vectors)
+    ]
+    evidence_count = min(5, len(scored_pairs))
+    selected = _select_supporting_evidence(scored_pairs, evidence_count=evidence_count)
+    return [quote for _, quote in selected]
 
 
-def analyze_feedback_csv(file_bytes: bytes, n_clusters: int = 3) -> AnalyzeResponse:
+def analyze_feedback_csv(
+    file_bytes: bytes,
+    n_clusters: int = 3,
+    run_id: str = "",
+) -> AnalyzeResponse:
+    # Normalize the incoming CSV to the canonical columns expected downstream
+    # (text, feedback_id, source), regardless of whether the caller passes the
+    # new `text` schema or the legacy `feedback` schema.
+    df = load_feedback_csv(file_bytes)
+    if "feedback_id" not in df.columns:
+        df["feedback_id"] = [f"f{i:03d}" for i in range(1, len(df) + 1)]
+    if "source" not in df.columns:
+        df["source"] = "unknown"
+    normalized_csv = df[["feedback_id", "text", "source"]].to_csv(index=False).encode("utf-8")
+
     with NamedTemporaryFile(mode="wb", suffix=".csv", delete=True) as temp_file:
-        temp_file.write(file_bytes)
+        temp_file.write(normalized_csv)
         temp_file.flush()
         analysis = analyze_feedback(csv_path=temp_file.name, n_clusters=n_clusters)
 
@@ -111,6 +99,7 @@ def analyze_feedback_csv(file_bytes: bytes, n_clusters: int = 3) -> AnalyzeRespo
     top_opportunities = ranked_clusters[:3]
 
     return AnalyzeResponse(
+        run_id=run_id,
         clusters_summary=_summarize_clusters(ranked_clusters),
         top_opportunities=top_opportunities,
         recommended_action=str(analysis["proposed_solution"]),

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class OpportunitySummary(BaseModel):
@@ -8,13 +8,8 @@ class OpportunitySummary(BaseModel):
     representative_feedback: str
 
 
-class DiscoveryResponse(BaseModel):
-    total_feedback_items: int = Field(..., ge=0)
-    total_clusters: int = Field(..., ge=0)
-    opportunities: list[OpportunitySummary]
-
-
 class AnalyzeResponse(BaseModel):
+    run_id: str
     clusters_summary: list[OpportunitySummary]
     top_opportunities: list[dict[str, object]]
     recommended_action: str
