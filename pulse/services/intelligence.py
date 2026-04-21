@@ -168,6 +168,19 @@ def run_analysis(
         theme = extract_theme(texts)
         keywords = extract_keywords(texts)
 
+        # LLM enrichment (if available)
+        from pulse.ml.llm import generate_cluster_label, generate_cluster_summary
+        llm_label = generate_cluster_label(keywords, texts[:8])
+        if llm_label:
+            theme = llm_label
+
+        summary_text = f"{len(members)} feedback items about {theme.lower()}"
+        llm_summary = generate_cluster_summary(
+            theme, len(members), total_items, keywords, texts[:6], float(avg_sentiment),
+        )
+        if llm_summary:
+            summary_text = llm_summary
+
         centroid_vec = centroids[label_int].tolist() if label_int < len(centroids) else None
 
         cluster = Cluster(
@@ -175,7 +188,7 @@ def run_analysis(
             org_id=org_id,
             label=theme,
             theme=theme,
-            summary=f"{len(members)} feedback items about {theme.lower()}",
+            summary=summary_text,
             size=len(members),
             opportunity_score=opp_score,
             severity_score=round(severity, 3),

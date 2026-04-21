@@ -255,6 +255,8 @@ class Artifact(Base):
     meta = Column("metadata_json", JSON, default=dict)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
+    analysis_run = relationship("AnalysisRun", back_populates="artifacts")
+
 
 # ── Trend Snapshots (time-series data for temporal intelligence) ─────────────
 

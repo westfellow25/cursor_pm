@@ -396,7 +396,7 @@ def get_latest_analysis(db: DB, org_id: CurrentOrgId):
         .all()
     )
 
-    # Get evidence for top cluster
+    # Get diverse evidence for top cluster (deduped by first 50 chars)
     evidence: list[str] = []
     if clusters:
         top = clusters[0]
@@ -404,13 +404,20 @@ def get_latest_analysis(db: DB, org_id: CurrentOrgId):
             db.query(ClusterMember)
             .filter(ClusterMember.cluster_id == top.id)
             .order_by(desc(ClusterMember.similarity))
-            .limit(5)
+            .limit(60)
             .all()
         )
+        seen_sigs: set[str] = set()
         for m in members:
+            if len(evidence) >= 5:
+                break
             item = db.get(FeedbackItem, m.feedback_id)
             if item:
-                evidence.append(item.text)
+                # Signature = first 6 words to catch template variations
+                sig = " ".join(item.text.lower().split()[:6])
+                if sig not in seen_sigs:
+                    seen_sigs.add(sig)
+                    evidence.append(item.text)
 
     return AnalysisDetailResponse(
         run=AnalysisRunResponse.model_validate(run),
@@ -418,6 +425,44 @@ def get_latest_analysis(db: DB, org_id: CurrentOrgId):
         top_opportunity=ClusterResponse.model_validate(clusters[0]) if clusters else None,
         evidence=evidence,
     )
+
+
+@router.get("/analysis/cluster/{cluster_id}/deep-dive", tags=["analysis"])
+def cluster_deep_dive(cluster_id: str, db: DB, org_id: CurrentOrgId):
+    """LLM-powered deep dive into a specific cluster."""
+    cluster = db.get(Cluster, cluster_id)
+    if not cluster or cluster.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+
+    members = (
+        db.query(ClusterMember)
+        .filter(ClusterMember.cluster_id == cluster.id)
+        .order_by(desc(ClusterMember.similarity))
+        .limit(15)
+        .all()
+    )
+    texts = []
+    seen: set[str] = set()
+    for m in members:
+        item = db.get(FeedbackItem, m.feedback_id)
+        if item and item.text not in seen:
+            seen.add(item.text)
+            texts.append(item.text)
+
+    from pulse.ml.llm import generate_recommendation, generate_root_cause_analysis
+    recommendation = generate_recommendation(
+        cluster.theme, cluster.severity_score, cluster.top_keywords or [], texts,
+    )
+    root_causes = generate_root_cause_analysis(
+        cluster.theme, texts, cluster.top_keywords or [],
+    )
+
+    return {
+        "cluster": ClusterResponse.model_validate(cluster),
+        "evidence": texts[:5],
+        "recommendation": recommendation or "Enable OpenAI API key for AI-powered recommendations.",
+        "root_cause_analysis": root_causes or "Enable OpenAI API key for root cause analysis.",
+    }
 
 
 @router.get("/analysis/runs", response_model=list[AnalysisRunResponse], tags=["analysis"])

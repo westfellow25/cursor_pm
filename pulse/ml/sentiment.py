@@ -30,6 +30,27 @@ _NEGATIVE = {
     "clunky": -0.5, "bloated": -0.5, "inconsistent": -0.5, "unstable": -0.7,
     "regression": -0.7, "downgrade": -0.7, "hate": -0.8, "painful": -0.6,
     "waste": -0.6, "stuck": -0.5, "blocked": -0.7, "cumbersome": -0.5,
+    "crashes": -0.8, "crashing": -0.8, "wrong": -0.5, "incorrectly": -0.5,
+    "empty": -0.4, "outdated": -0.4, "silently": -0.4, "cryptic": -0.5,
+    "overwhelming": -0.5, "needlessly": -0.5, "restrictive": -0.4,
+    "duplicates": -0.5, "duplicate": -0.5, "delays": -0.5, "forever": -0.6,
+    "maze": -0.5, "impossible": -0.7, "unacceptable": -0.8, "expires": -0.3,
+    "expire": -0.3, "disconnecting": -0.5, "breaking": -0.6, "weak": -0.4,
+    "hidden": -0.3, "hard": -0.4, "overlap": -0.3, "longer": -0.3,
+}
+
+# Phrase-level patterns (checked against full text) for cases the tokenizer misses
+_NEGATIVE_PHRASES = {
+    "not working": -0.7, "doesn't work": -0.7, "can't find": -0.5,
+    "too long": -0.4, "too many": -0.4, "too short": -0.3,
+    "no way to": -0.5, "hard to find": -0.5, "hard to": -0.4,
+    "nothing is where": -0.5, "lost my work": -0.7, "this has been broken": -0.7,
+    "data loss": -0.9, "we might have to look at alternatives": -0.7,
+}
+_POSITIVE_PHRASES = {
+    "exactly what we needed": 0.8, "best-in-class": 0.8,
+    "pleasure to work": 0.7, "completely transformed": 0.8,
+    "well-designed": 0.6, "well-documented": 0.6,
 }
 
 # Negation flips sentiment
@@ -83,6 +104,17 @@ def analyze_sentiment(text: str) -> float:
 
         score += val
         count += 1
+
+    # Phrase-level patterns
+    text_lower = text.lower()
+    for phrase, val in _NEGATIVE_PHRASES.items():
+        if phrase in text_lower:
+            score += val
+            count += 1
+    for phrase, val in _POSITIVE_PHRASES.items():
+        if phrase in text_lower:
+            score += val
+            count += 1
 
     if count == 0:
         return 0.0

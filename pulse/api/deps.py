@@ -2,38 +2,42 @@
 
 from __future__ import annotations
 
+import hmac as _hmac_mod
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
+from pulse.api import jwt_utils
 from pulse.config import settings
 from pulse.database import get_db
 from pulse.models import Organisation, User
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 72
 
 
+def _sha256_hash(password: str) -> str:
+    return sha256(password.encode()).hexdigest()
+
+
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return _sha256_hash(password)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return _hmac_mod.compare_digest(_sha256_hash(plain), hashed)
 
 
 def create_access_token(user_id: str, org_id: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
-    payload = {"sub": user_id, "org": org_id, "exp": expire}
-    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+    payload = {"sub": user_id, "org": org_id, "exp": expire.timestamp()}
+    return jwt_utils.encode(payload, settings.secret_key)
 
 
 def get_current_user(
@@ -45,9 +49,9 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
     try:
-        payload = jwt.decode(credentials.credentials, settings.secret_key, algorithms=[ALGORITHM])
+        payload = jwt_utils.decode(credentials.credentials, settings.secret_key)
         user_id: str = payload.get("sub", "")
-    except JWTError:
+    except (jwt_utils.InvalidTokenError, jwt_utils.ExpiredSignatureError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     user = db.get(User, user_id)
