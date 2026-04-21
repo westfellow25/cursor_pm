@@ -71,10 +71,24 @@ cursor_pm/
 ```bash
 python -m pip install -e .
 cp .env.example .env
-# Edit .env: set SECRET_KEY (and optionally OPENAI_API_KEY)
-python -m scripts.seed         # populate demo data (2000 items, 6 months)
+# Edit .env: set SECRET_KEY and either ANTHROPIC_API_KEY (recommended)
+#           or OPENAI_API_KEY for LLM features
+python -m scripts.seed         # populate demo data (2500 items, 6 months)
 uvicorn pulse.main:app --reload
 ```
+
+### LLM provider selection
+
+Pulse supports both **Anthropic Claude** and **OpenAI GPT**. Claude is preferred
+for product/business analysis (longer context, better reasoning).
+
+| Env var set | Active LLM |
+|---|---|
+| `ANTHROPIC_API_KEY` | Claude (recommended) |
+| `OPENAI_API_KEY` only | GPT fallback |
+| Neither | Heuristic fallback (still works, just less rich) |
+
+The active provider is visible in the sidebar and at `GET /api/v1/system/status`.
 
 Backend runs at **http://localhost:8000** — OpenAPI docs at `/docs`.
 
@@ -102,7 +116,7 @@ uvicorn pulse.main:app --host 0.0.0.0 --port 8000
 |-------|----------|
 | `demo@acme.com` | `demo1234` |
 
-Organisation: *Acme Corp* (SaaS, 51-200) with 2000 feedback items across 4 sources over 6 months.
+Organisation: *Acme Corp* (SaaS, 51-200) with **2500 feedback items** across 5 sources over 6 months, drawn from **252 unique feedback templates** spanning 10 categories.
 
 ## Key API Endpoints
 

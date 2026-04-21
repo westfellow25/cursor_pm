@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import desc, func
 
+from pulse.config import settings
 from pulse.api.deps import (
     DB,
     CurrentOrgId,
@@ -125,6 +126,19 @@ def login(body: LoginRequest, db: DB):
 @router.get("/auth/me", response_model=UserResponse, tags=["auth"])
 def me(user: CurrentUser):
     return user
+
+
+@router.get("/system/status", tags=["system"])
+def system_status():
+    """Return info about active LLM provider and feature flags."""
+    from pulse.ml.llm import get_llm_info
+    return {
+        "llm": get_llm_info(),
+        "features": {
+            "llm_available": get_llm_info()["provider"] != "none",
+            "embeddings_configured": bool(settings.openai_api_key),
+        },
+    }
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────

@@ -78,4 +78,7 @@ export const api = {
 
   // Trends
   trends: (weeks = 12) => request(`/trends?weeks=${weeks}`),
+
+  // System
+  systemStatus: () => request('/system/status'),
 }

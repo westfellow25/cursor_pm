@@ -22,7 +22,12 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{BASE_DIR / 'pulse.db'}"
     secret_key: str = "change-me"
 
-    # ── OpenAI ────────────────────────────────────────
+    # ── LLM providers ─────────────────────────────────
+    # Claude (Anthropic) — preferred for product/business analysis
+    anthropic_api_key: str = ""
+    claude_model: str = "claude-sonnet-4-6"
+
+    # OpenAI — used for embeddings + LLM fallback
     openai_api_key: str = ""
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 256

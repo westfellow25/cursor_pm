@@ -1,6 +1,10 @@
 """LLM-powered intelligence layer.
 
-When an OpenAI API key is available, uses GPT to generate:
+Supports both Claude (Anthropic) and GPT (OpenAI). Claude is preferred
+when ANTHROPIC_API_KEY is set — it handles product/business analysis
+better and has a much larger context window.
+
+Used for:
 - Rich thematic labels for clusters
 - Actionable summaries and recommendations
 - Root cause analysis
@@ -10,19 +14,48 @@ Falls back gracefully to heuristic methods when no key is configured."""
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any
+from functools import lru_cache
+from typing import Any, Literal
 
 from pulse.config import settings
 
 logger = logging.getLogger(__name__)
 
+Provider = Literal["anthropic", "openai", "none"]
 
-def _call_llm(system: str, user: str, max_tokens: int = 512) -> str | None:
-    """Call the LLM. Returns None if unavailable."""
-    if not settings.openai_api_key:
+
+@lru_cache(maxsize=1)
+def _active_provider() -> Provider:
+    """Determine which LLM provider to use based on config."""
+    if settings.anthropic_api_key:
+        return "anthropic"
+    if settings.openai_api_key:
+        return "openai"
+    return "none"
+
+
+def _call_anthropic(system: str, user: str, max_tokens: int) -> str | None:
+    try:
+        from anthropic import Anthropic
+        client = Anthropic(api_key=settings.anthropic_api_key)
+        resp = client.messages.create(
+            model=settings.claude_model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        # Extract text from content blocks
+        for block in resp.content:
+            if hasattr(block, "text"):
+                return block.text.strip()
         return None
+    except Exception as exc:
+        logger.warning("Claude call failed: %s", exc)
+        return None
+
+
+def _call_openai(system: str, user: str, max_tokens: int) -> str | None:
     try:
         from openai import OpenAI
         client = OpenAI(api_key=settings.openai_api_key)
@@ -37,8 +70,32 @@ def _call_llm(system: str, user: str, max_tokens: int = 512) -> str | None:
         )
         return resp.choices[0].message.content.strip()
     except Exception as exc:
-        logger.warning("LLM call failed: %s", exc)
+        logger.warning("OpenAI call failed: %s", exc)
         return None
+
+
+def _call_llm(system: str, user: str, max_tokens: int = 512) -> str | None:
+    """Call the active LLM provider. Returns None if unavailable."""
+    provider = _active_provider()
+    if provider == "anthropic":
+        return _call_anthropic(system, user, max_tokens)
+    if provider == "openai":
+        return _call_openai(system, user, max_tokens)
+    return None
+
+
+def is_llm_available() -> bool:
+    return _active_provider() != "none"
+
+
+def get_llm_info() -> dict[str, str]:
+    """Return info about the active LLM provider."""
+    provider = _active_provider()
+    if provider == "anthropic":
+        return {"provider": "anthropic", "model": settings.claude_model}
+    if provider == "openai":
+        return {"provider": "openai", "model": settings.llm_model}
+    return {"provider": "none", "model": "heuristic fallback"}
 
 
 def generate_cluster_label(keywords: list[str], sample_texts: list[str]) -> str | None:
@@ -160,38 +217,26 @@ def enrich_clusters_with_llm(
     clusters_data: list[dict[str, Any]],
     total_feedback: int,
 ) -> list[dict[str, Any]]:
-    """Enrich a list of cluster dicts with LLM-generated content.
-
-    Each dict should have: theme, size, keywords, sample_texts, sentiment_avg, severity.
-    Returns the same list with added fields: llm_label, llm_summary, llm_recommendation.
-    """
-    if not settings.openai_api_key:
+    """Enrich a list of cluster dicts with LLM-generated content."""
+    if not is_llm_available():
         return clusters_data
 
-    for cluster in clusters_data[:10]:  # Only enrich top 10 clusters
-        label = generate_cluster_label(
-            cluster.get("keywords", []),
-            cluster.get("sample_texts", []),
-        )
+    for cluster in clusters_data[:10]:
+        label = generate_cluster_label(cluster.get("keywords", []), cluster.get("sample_texts", []))
         if label:
             cluster["llm_label"] = label
 
         summary = generate_cluster_summary(
-            cluster.get("theme", ""),
-            cluster.get("size", 0),
-            total_feedback,
-            cluster.get("keywords", []),
-            cluster.get("sample_texts", []),
+            cluster.get("theme", ""), cluster.get("size", 0), total_feedback,
+            cluster.get("keywords", []), cluster.get("sample_texts", []),
             cluster.get("sentiment_avg", 0.0),
         )
         if summary:
             cluster["llm_summary"] = summary
 
         recommendation = generate_recommendation(
-            cluster.get("theme", ""),
-            cluster.get("severity", 0.0),
-            cluster.get("keywords", []),
-            cluster.get("sample_texts", []),
+            cluster.get("theme", ""), cluster.get("severity", 0.0),
+            cluster.get("keywords", []), cluster.get("sample_texts", []),
         )
         if recommendation:
             cluster["llm_recommendation"] = recommendation
