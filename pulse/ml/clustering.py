@@ -120,16 +120,80 @@ def cluster_embeddings(
 # ── Theme extraction ─────────────────────────────────────────────────────────
 
 _THEME_PATTERNS: dict[frozenset[str], str] = {
+    # Performance
     frozenset({"dashboard", "slow", "loading", "performance", "latency"}): "Dashboard performance",
-    frozenset({"search", "filter", "find", "query", "results"}): "Search & filtering",
-    frozenset({"export", "report", "csv", "download", "pdf"}): "Reporting & exports",
-    frozenset({"integration", "sync", "api", "connect", "webhook"}): "Integration reliability",
-    frozenset({"permission", "access", "role", "admin", "security"}): "Access control",
-    frozenset({"onboarding", "setup", "wizard", "tutorial", "started"}): "Onboarding experience",
-    frozenset({"mobile", "ios", "android", "responsive", "app"}): "Mobile experience",
-    frozenset({"notification", "alert", "email", "message"}): "Notifications & alerts",
-    frozenset({"pricing", "billing", "plan", "subscription", "cost"}): "Pricing & billing",
+    frozenset({"slow", "loading", "spinner", "timeout", "render"}): "Page load performance",
+    frozenset({"lag", "laggy", "stutter", "freeze", "crawl"}): "UI responsiveness",
+    frozenset({"response", "times", "api", "speed", "doubled"}): "API response times",
+    frozenset({"charts", "rendering", "complex", "data", "points"}): "Chart rendering performance",
+    frozenset({"batch", "operations", "bulk", "large", "dataset"}): "Bulk operation performance",
+    # Bugs
     frozenset({"crash", "bug", "error", "broken", "fails"}): "Stability & reliability",
+    frozenset({"crashes", "startup", "upload", "mobile"}): "App crash issues",
+    frozenset({"login", "authentication", "password", "timeout", "fails"}): "Authentication issues",
+    frozenset({"duplicate", "duplicates", "sync", "data", "records"}): "Data sync & duplicates",
+    frozenset({"save", "lost", "overwrite", "conflict", "work"}): "Data loss & save issues",
+    frozenset({"wrong", "incorrect", "incorrectly", "match", "displaying"}): "Incorrect data display",
+    frozenset({"sort", "sorting", "order", "pagination", "filter"}): "Sorting & filtering bugs",
+    frozenset({"email", "notification", "sent", "wrong", "names"}): "Email notification bugs",
+    # UX
+    frozenset({"navigation", "confusing", "find", "settings", "hidden"}): "Navigation & discoverability",
+    frozenset({"clicks", "steps", "many", "workflow", "complicated"}): "Workflow complexity",
+    frozenset({"mobile", "layout", "responsive", "phones", "tablet"}): "Mobile experience",
+    frozenset({"keyboard", "shortcuts", "shortcut", "actions"}): "Keyboard accessibility",
+    frozenset({"dark", "mode", "contrast", "color", "colorblind"}): "Accessibility & theming",
+    frozenset({"onboarding", "setup", "wizard", "tutorial", "started"}): "Onboarding experience",
+    frozenset({"validation", "messages", "error", "cryptic", "unhelpful"}): "Error messaging",
+    frozenset({"table", "headers", "columns", "resize", "scroll"}): "Table & list UX",
+    frozenset({"empty", "states", "blank", "guidance", "help"}): "Empty state guidance",
+    frozenset({"customize", "custom", "personalize", "layout", "dashboard"}): "Customization gaps",
+    # Feature requests
+    frozenset({"salesforce", "integration", "crm", "hubspot", "sync"}): "CRM integration",
+    frozenset({"sso", "saml", "oauth", "compliance", "security"}): "SSO & compliance",
+    frozenset({"schedule", "recurring", "automated", "report"}): "Automated reporting",
+    frozenset({"slack", "bot", "notifications", "real", "time"}): "Real-time notifications",
+    frozenset({"api", "endpoint", "webhook", "custom", "public"}): "API & developer tools",
+    frozenset({"language", "multi", "global", "i18n", "translation"}): "Multi-language support",
+    frozenset({"import", "export", "bulk", "csv", "tool"}): "Import & export tools",
+    frozenset({"role", "access", "control", "permissions", "rbac"}): "Role-based access",
+    frozenset({"audit", "log", "compliance", "track", "requirements"}): "Audit & compliance",
+    frozenset({"workflow", "automation", "zapier", "trigger", "builder"}): "Workflow automation",
+    frozenset({"gantt", "timeline", "project", "milestones"}): "Project timeline views",
+    frozenset({"approval", "workflows", "sign", "publish"}): "Approval workflows",
+    frozenset({"calendar", "google", "sync", "ical", "meetings"}): "Calendar integration",
+    frozenset({"custom", "fields", "metrics", "track", "data"}): "Custom fields & metrics",
+    frozenset({"compare", "periods", "side", "time", "analysis"}): "Comparative analytics",
+    # Integration
+    frozenset({"integration", "sync", "api", "connect", "webhook"}): "Integration reliability",
+    frozenset({"slack", "disconnecting", "keeps", "days", "connection"}): "Slack integration issues",
+    frozenset({"jira", "tickets", "priority", "linear", "fields"}): "Project tool integration",
+    frozenset({"documentation", "outdated", "examples", "docs", "api"}): "API documentation",
+    frozenset({"rate", "limits", "restrictive", "tokens", "expire"}): "API limits & auth",
+    frozenset({"stripe", "billing", "payment", "transactions"}): "Payment integration",
+    # Reporting & data
+    frozenset({"export", "report", "csv", "download", "pdf"}): "Reporting & exports",
+    frozenset({"analytics", "drill", "down", "cohort", "funnel"}): "Advanced analytics",
+    frozenset({"chart", "visualization", "scatter", "heatmap", "map"}): "Data visualization",
+    frozenset({"historical", "data", "retention", "days", "year"}): "Data retention & history",
+    frozenset({"real", "time", "refresh", "intervals", "live"}): "Real-time data updates",
+    frozenset({"sql", "query", "calculated", "derived", "fields"}): "Computed metrics & queries",
+    # Security
+    frozenset({"permission", "access", "role", "admin", "security"}): "Access control",
+    frozenset({"soc2", "compliance", "encryption", "gdpr", "data"}): "Security compliance",
+    frozenset({"mfa", "2fa", "session", "ip", "whitelisting"}): "Authentication security",
+    frozenset({"vulnerability", "xss", "malware", "scan"}): "Security vulnerabilities",
+    # Notification
+    frozenset({"notification", "alert", "email", "message", "delivered"}): "Notifications & alerts",
+    frozenset({"push", "mobile", "notification", "real", "time"}): "Push notifications",
+    # Pricing
+    frozenset({"pricing", "billing", "plan", "subscription", "cost"}): "Pricing & billing",
+    frozenset({"seat", "per", "pricing", "users", "viewers"}): "Per-seat pricing model",
+    frozenset({"trial", "free", "tier", "evaluate", "limited"}): "Free tier & trials",
+    frozenset({"discount", "annual", "startup", "volume"}): "Pricing options",
+    # Praise
+    frozenset({"love", "great", "amazing", "fantastic", "best"}): "Positive user experience",
+    frozenset({"support", "team", "fantastic", "resolved", "helpful"}): "Customer support praise",
+    frozenset({"improved", "workflow", "transformed", "productive"}): "Productivity improvements",
 }
 
 

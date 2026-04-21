@@ -10,9 +10,14 @@ import {
   ArrowRight,
   Upload,
   Play,
+  X,
+  ChevronRight,
+  BarChart3,
+  Zap,
 } from 'lucide-react'
 import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
@@ -53,18 +58,117 @@ function InsightCard({ insight }) {
   )
 }
 
-function ClusterRow({ cluster, rank }) {
+function ClusterRow({ cluster, rank, onClick }) {
   const scoreColor = cluster.opportunity_score >= 7 ? 'text-red-600' : cluster.opportunity_score >= 4 ? 'text-amber-600' : 'text-emerald-600'
   return (
-    <div className="flex items-center gap-4 py-3 border-b border-gray-100 last:border-0">
+    <div className="flex items-center gap-4 py-3 border-b border-gray-100 last:border-0 cursor-pointer hover:bg-gray-50 -mx-2 px-2 rounded transition-colors"
+      onClick={() => onClick?.(cluster)}>
       <span className="w-6 h-6 rounded-full bg-gray-100 text-xs font-bold flex items-center justify-center text-gray-500">
         {rank}
       </span>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{cluster.label}</p>
-        <p className="text-xs text-gray-400">{cluster.size} items &middot; {cluster.top_keywords?.slice(0, 3).join(', ')}</p>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className="text-xs text-gray-400">{cluster.size} items</span>
+          <span className="text-xs text-gray-300">&middot;</span>
+          <span className="text-xs text-gray-400">{cluster.top_keywords?.slice(0, 3).join(', ')}</span>
+        </div>
       </div>
       <span className={`text-lg font-bold ${scoreColor}`}>{cluster.opportunity_score}</span>
+      <ChevronRight className="w-4 h-4 text-gray-300" />
+    </div>
+  )
+}
+
+function ClusterDetail({ cluster, onClose }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    api.clusterDeepDive(cluster.id).then(setData).finally(() => setLoading(false))
+  }, [cluster.id])
+
+  const sentColor = (cluster.sentiment_avg || 0) < -0.2 ? 'text-red-600' : (cluster.sentiment_avg || 0) > 0.2 ? 'text-emerald-600' : 'text-gray-600'
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6">
+      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-medium px-2 py-0.5 bg-pulse-50 text-pulse-700 rounded-full">Cluster</span>
+              <span className="text-xs text-gray-400">Score: {cluster.opportunity_score}/10</span>
+            </div>
+            <h2 className="text-lg font-bold">{cluster.label}</h2>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="flex-1 overflow-auto p-6 space-y-6">
+          {/* Metrics row */}
+          <div className="grid grid-cols-4 gap-3">
+            <div className="bg-gray-50 rounded-lg p-3 text-center">
+              <p className="text-xs text-gray-500">Feedback</p>
+              <p className="text-xl font-bold">{cluster.size}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3 text-center">
+              <p className="text-xs text-gray-500">Sentiment</p>
+              <p className={`text-xl font-bold ${sentColor}`}>{(cluster.sentiment_avg || 0).toFixed(2)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3 text-center">
+              <p className="text-xs text-gray-500">Severity</p>
+              <p className="text-xl font-bold">{(cluster.severity_score || 0).toFixed(2)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3 text-center">
+              <p className="text-xs text-gray-500">Revenue Impact</p>
+              <p className="text-xl font-bold">{cluster.revenue_impact ? `$${cluster.revenue_impact.toLocaleString()}` : '—'}</p>
+            </div>
+          </div>
+
+          {/* Keywords */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Top Keywords</h3>
+            <div className="flex flex-wrap gap-1.5">
+              {(cluster.top_keywords || []).map(kw => (
+                <span key={kw} className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">{kw}</span>
+              ))}
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="py-8 flex justify-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-pulse-600" /></div>
+          ) : data ? (
+            <>
+              {/* Evidence quotes */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Sample Feedback</h3>
+                <div className="space-y-2">
+                  {(data.evidence || []).map((e, i) => (
+                    <div key={i} className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 border-l-2 border-pulse-300">
+                      &ldquo;{e}&rdquo;
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* AI Recommendation */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                  <Zap className="w-4 h-4 text-amber-500" /> AI Recommendation
+                </h3>
+                <p className="text-sm text-gray-700 bg-amber-50 border border-amber-200 rounded-lg p-4">{data.recommendation}</p>
+              </div>
+
+              {/* Root Cause */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                  <BarChart3 className="w-4 h-4 text-purple-500" /> Root Cause Analysis
+                </h3>
+                <p className="text-sm text-gray-700 bg-purple-50 border border-purple-200 rounded-lg p-4 whitespace-pre-line">{data.root_cause_analysis}</p>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </div>
     </div>
   )
 }
@@ -75,6 +179,7 @@ export default function DashboardPage() {
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
+  const [selectedCluster, setSelectedCluster] = useState(null)
 
   const load = () => {
     setLoading(true)
@@ -220,7 +325,7 @@ export default function DashboardPage() {
         {topClusters.length > 0 ? (
           <div>
             {topClusters.map((cluster, i) => (
-              <ClusterRow key={cluster.id} cluster={cluster} rank={i + 1} />
+              <ClusterRow key={cluster.id} cluster={cluster} rank={i + 1} onClick={setSelectedCluster} />
             ))}
           </div>
         ) : (
@@ -230,6 +335,10 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {selectedCluster && (
+        <ClusterDetail cluster={selectedCluster} onClose={() => setSelectedCluster(null)} />
+      )}
     </div>
   )
 }

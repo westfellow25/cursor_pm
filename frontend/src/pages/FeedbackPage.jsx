@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Search,
+  Download,
   Filter,
   ChevronLeft,
   ChevronRight,
@@ -41,6 +42,7 @@ export default function FeedbackPage() {
   const [filters, setFilters] = useState({ page: 1, page_size: 30, category: '', channel: '', search: '', sort_by: 'created_at', sort_dir: 'desc' })
   const [uploading, setUploading] = useState(false)
   const [stats, setStats] = useState(null)
+  const [expandedId, setExpandedId] = useState(null)
 
   const load = () => {
     setLoading(true)
@@ -75,12 +77,22 @@ export default function FeedbackPage() {
           <h1 className="text-2xl font-bold">Feedback Explorer</h1>
           <p className="text-gray-500 text-sm mt-1">{data.total.toLocaleString()} items across all sources</p>
         </div>
-        <label className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg cursor-pointer transition-colors
-          ${uploading ? 'bg-gray-100 text-gray-400' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
-          <Upload className="w-4 h-4" />
-          {uploading ? 'Uploading...' : 'Upload CSV'}
-          <input type="file" accept=".csv" className="hidden" onChange={handleUpload} disabled={uploading} />
-        </label>
+        <div className="flex items-center gap-2">
+          <button onClick={() => {
+            const rows = [['Text','Category','Sentiment','Channel','Author','Date']]
+            data.items.forEach(i => rows.push([`"${i.text.replace(/"/g,'""')}"`, i.category, i.sentiment, i.channel, i.author, new Date(i.created_at).toLocaleDateString()]))
+            const blob = new Blob([rows.map(r => r.join(',')).join('\n')], { type: 'text/csv' })
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'feedback_export.csv'; a.click()
+          }} className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+            <Download className="w-4 h-4" /> Export CSV
+          </button>
+          <label className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg cursor-pointer transition-colors
+            ${uploading ? 'bg-gray-100 text-gray-400' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
+            <Upload className="w-4 h-4" />
+            {uploading ? 'Uploading...' : 'Upload CSV'}
+            <input type="file" accept=".csv" className="hidden" onChange={handleUpload} disabled={uploading} />
+          </label>
+        </div>
       </div>
 
       {/* Stats row */}
@@ -133,15 +145,40 @@ export default function FeedbackPage() {
             ) : data.items.length === 0 ? (
               <tr><td colSpan={5} className="px-4 py-12 text-center text-gray-400">No feedback items found</td></tr>
             ) : data.items.map((item) => (
-              <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                <td className="px-4 py-3">
-                  <p className="line-clamp-2">{item.text}</p>
-                  {item.author && <p className="text-xs text-gray-400 mt-1">by {item.author}</p>}
+              <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
+                onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}>
+                <td className="px-4 py-3" colSpan={expandedId === item.id ? 5 : 1}>
+                  {expandedId === item.id ? (
+                    <div className="space-y-3">
+                      <p className="text-sm">{item.text}</p>
+                      <div className="grid grid-cols-4 gap-3 bg-gray-50 rounded-lg p-3">
+                        <div><span className="text-xs text-gray-500 block">Category</span><CategoryBadge value={item.category} /></div>
+                        <div><span className="text-xs text-gray-500 block">Sentiment</span><SentimentBadge value={item.sentiment} /></div>
+                        <div><span className="text-xs text-gray-500 block">Urgency</span><span className="text-xs font-medium">{(item.urgency || 0).toFixed(2)}</span></div>
+                        <div><span className="text-xs text-gray-500 block">Segment</span><span className="text-xs font-medium">{item.author_segment || '—'}</span></div>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                        {item.author && <span>By: {item.author}</span>}
+                        <span>Channel: {item.channel || '—'}</span>
+                        <span>Date: {new Date(item.created_at).toLocaleString()}</span>
+                        {item.subcategory && <span>Subcategory: {item.subcategory}</span>}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="line-clamp-2">{item.text}</p>
+                      {item.author && <p className="text-xs text-gray-400 mt-1">by {item.author}</p>}
+                    </>
+                  )}
                 </td>
-                <td className="px-4 py-3"><CategoryBadge value={item.category} /></td>
-                <td className="px-4 py-3"><SentimentBadge value={item.sentiment} /></td>
-                <td className="px-4 py-3"><span className="text-xs text-gray-500">{item.channel || '—'}</span></td>
-                <td className="px-4 py-3"><span className="text-xs text-gray-500">{new Date(item.created_at).toLocaleDateString()}</span></td>
+                {expandedId !== item.id && (
+                  <>
+                    <td className="px-4 py-3"><CategoryBadge value={item.category} /></td>
+                    <td className="px-4 py-3"><SentimentBadge value={item.sentiment} /></td>
+                    <td className="px-4 py-3"><span className="text-xs text-gray-500">{item.channel || '—'}</span></td>
+                    <td className="px-4 py-3"><span className="text-xs text-gray-500">{new Date(item.created_at).toLocaleDateString()}</span></td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
