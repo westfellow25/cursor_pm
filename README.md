@@ -66,7 +66,28 @@ cursor_pm/
 
 ## Quick Start
 
-### 1. Backend
+### 🚀 Option A: GitHub Codespaces (easiest — no local setup)
+
+1. Open this repo on GitHub
+2. Click **Code → Codespaces → Create codespace on main**
+3. Wait ~2 minutes for auto-setup (deps install, seed data, frontend build)
+4. Run: `uvicorn pulse.main:app --host 0.0.0.0 --port 8000`
+5. When VS Code prompts to open the forwarded port 8000, click **Open in Browser**
+6. Log in with `demo@acme.com` / `demo1234`
+
+To enable AI features: edit `.env` and add `ANTHROPIC_API_KEY=sk-ant-...`
+
+### 🐳 Option B: Docker (one command)
+
+```bash
+docker-compose up
+```
+
+Then open http://localhost:8000 — login with `demo@acme.com` / `demo1234`.
+
+### 💻 Option C: Local install
+
+#### 1. Backend
 
 ```bash
 python -m pip install -e .
@@ -92,7 +113,7 @@ The active provider is visible in the sidebar and at `GET /api/v1/system/status`
 
 Backend runs at **http://localhost:8000** — OpenAPI docs at `/docs`.
 
-### 2. Frontend
+#### 2. Frontend
 
 ```bash
 cd frontend
@@ -102,7 +123,7 @@ npm run dev
 
 Dev server runs at **http://localhost:5173** with API proxy to backend.
 
-### 3. Build for production
+#### 3. Build for production
 
 ```bash
 cd frontend && npm run build
