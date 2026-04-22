@@ -93,11 +93,22 @@ def detect_emerging_topics(
     current_categories: dict[str, int],
     historical_categories: dict[str, int],
     threshold: float = 2.0,
+    min_historical_volume: int = 50,
 ) -> list[Anomaly]:
-    """Detect categories growing faster than expected."""
+    """Detect categories growing faster than expected.
+
+    Requires meaningful historical volume before flagging — otherwise every
+    category on a cold-start dataset would show up as a "10x emerging topic".
+    """
     anomalies: list[Anomaly] = []
     total_current = sum(current_categories.values()) or 1
-    total_historical = sum(historical_categories.values()) or 1
+    total_historical = sum(historical_categories.values())
+
+    # Cold-start guard: without enough history, there is no baseline to compare
+    # against. Skip emerging-topic detection entirely rather than flag every
+    # category as a 10x spike.
+    if total_historical < min_historical_volume:
+        return anomalies
 
     for cat, count in current_categories.items():
         current_pct = count / total_current
@@ -106,8 +117,12 @@ def detect_emerging_topics(
 
         if historical_pct > 0:
             growth = current_pct / historical_pct
-        elif current_pct > 0.05:  # New category with >5% share
-            growth = 10.0
+        elif current_pct > 0.05:
+            # Genuinely new category (not seen in a non-empty history). Cap the
+            # reported growth multiplier at something proportional to share
+            # rather than the old fixed 10.0 which made every category look
+            # identical.
+            growth = max(2.0, current_pct * 20)
         else:
             continue
 

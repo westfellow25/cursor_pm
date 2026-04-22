@@ -30,6 +30,10 @@ if [ ! -f .env ]; then
 fi
 
 echo ""
+echo "→ Pre-downloading local embedding model (MiniLM, ~90 MB)..."
+python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')" || echo "  (model download skipped, will fetch on first use)"
+
+echo ""
 echo "→ Seeding demo data (2500 feedback items, 6 months)..."
 python -m scripts.seed || echo "  (already seeded)"
 

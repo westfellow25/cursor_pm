@@ -98,10 +98,12 @@ python -m scripts.seed         # populate demo data (2500 items, 6 months)
 uvicorn pulse.main:app --reload
 ```
 
-### LLM provider selection
+### LLM & embedding providers
 
-Pulse supports both **Anthropic Claude** and **OpenAI GPT**. Claude is preferred
-for product/business analysis (longer context, better reasoning).
+Pulse uses two independent AI building blocks: an **LLM** (for cluster labels,
+summaries, recommendations) and an **embedding model** (for clustering).
+
+**LLM** — Claude preferred, OpenAI fallback, heuristics last:
 
 | Env var set | Active LLM |
 |---|---|
@@ -109,7 +111,19 @@ for product/business analysis (longer context, better reasoning).
 | `OPENAI_API_KEY` only | GPT fallback |
 | Neither | Heuristic fallback (still works, just less rich) |
 
-The active provider is visible in the sidebar and at `GET /api/v1/system/status`.
+**Embeddings** — OpenAI if configured, otherwise a local semantic model:
+
+| Env var set | Active embedding |
+|---|---|
+| `OPENAI_API_KEY` | `text-embedding-3-small` (256d) |
+| (none) | `sentence-transformers/all-MiniLM-L6-v2` (384d, runs locally) |
+
+The local MiniLM model is ~90 MB, downloaded on first use. It gives real
+semantic similarity between paraphrased feedback — good enough for clustering.
+The devcontainer pre-downloads it during setup.
+
+Both providers are reported at `GET /api/v1/system/status`. Pass
+`?verify=true` to actually ping the LLM and confirm the key works.
 
 Backend runs at **http://localhost:8000** — OpenAPI docs at `/docs`.
 

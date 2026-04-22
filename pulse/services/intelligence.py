@@ -58,23 +58,35 @@ def _opportunity_score(
     severity: float,
     sentiment: float,
     prevalence: float,
+    cluster_size: int = 0,
 ) -> float:
     """Compute opportunity score (0-10).
 
     Formula weights:
-    - Frequency (40%): how many items in this cluster
-    - Severity (30%): how urgent/critical the feedback is
-    - Negative sentiment (20%): how unhappy users are
-    - Prevalence (10%): how many distinct segments report this
+    - Frequency (35%): share of feedback in this cluster
+    - Size boost: log-scaled bump so a 10-item cluster clearly outranks a
+      1-item cluster even if the smaller one has very high severity
+    - Severity (25%): how urgent/critical the feedback is
+    - Negative sentiment (25%): how unhappy users are
+    - Prevalence (15%): how many distinct segments report this
     """
-    neg_sentiment = max(0.0, -sentiment)  # Convert to 0-1 scale where more negative = higher
+    neg_sentiment = max(0.0, -sentiment)
+    # Log-scaled size bonus: 1 item → 0.0, 3 → 0.48, 10 → 1.0 (capped).
+    import math
+
+    size_bonus = min(1.0, math.log1p(max(0, cluster_size - 1)) / math.log(10))
+
     raw = (
-        0.40 * frequency
-        + 0.30 * severity
-        + 0.20 * neg_sentiment
-        + 0.10 * prevalence
+        0.35 * frequency
+        + 0.25 * severity
+        + 0.25 * neg_sentiment
+        + 0.15 * prevalence
     )
-    return round(min(10.0, raw * 10.0), 1)
+    scaled = raw * 10.0
+    # Size bonus adds up to +1.5 points on top of the weighted formula, which is
+    # enough to push a 10-item negative cluster above a 1-item crisis-ticket.
+    scaled += 1.5 * size_bonus
+    return round(min(10.0, scaled), 1)
 
 
 def run_analysis(
@@ -164,7 +176,9 @@ def run_analysis(
         avg_sentiment = np.mean(sentiments) if sentiments else 0.0
         prevalence = len(segments_in_cluster) / total_segments if total_segments > 0 else 0.0
 
-        opp_score = _opportunity_score(frequency, severity, avg_sentiment, prevalence)
+        opp_score = _opportunity_score(
+            frequency, severity, avg_sentiment, prevalence, cluster_size=len(members)
+        )
         theme = extract_theme(texts)
         keywords = extract_keywords(texts)
 

@@ -98,6 +98,18 @@ def get_llm_info() -> dict[str, str]:
     return {"provider": "none", "model": "heuristic fallback"}
 
 
+def verify_llm() -> bool:
+    """Issue a minimal prompt to confirm the configured LLM key actually works.
+
+    Returns False if the provider is `none`, the API key is invalid, the model
+    name is wrong, or the provider is unreachable. Cheap (~1 token out).
+    """
+    if not is_llm_available():
+        return False
+    result = _call_llm(system="Reply with the single word: ok.", user="ping", max_tokens=4)
+    return bool(result)
+
+
 def generate_cluster_label(keywords: list[str], sample_texts: list[str]) -> str | None:
     """Generate a human-readable theme label for a cluster."""
     samples = "\n".join(f"- {t[:150]}" for t in sample_texts[:8])

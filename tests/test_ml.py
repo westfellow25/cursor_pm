@@ -3,7 +3,7 @@
 import numpy as np
 
 from pulse.ml.sentiment import analyze_sentiment, analyze_urgency, classify_category, enrich_feedback
-from pulse.ml.embeddings import embed_texts_local
+from pulse.ml.embeddings import embed_texts_hashing, embed_texts_local
 from pulse.ml.clustering import cluster_embeddings, extract_theme, extract_keywords, choose_cluster_count
 from pulse.ml.anomaly import detect_volume_spike, detect_sentiment_shift
 
@@ -44,13 +44,23 @@ def test_enrich_feedback_has_all_fields():
     assert result["urgency"] > 0.5
 
 
-def test_embed_texts_local_shape():
+def test_embed_texts_hashing_shape():
     texts = ["the dashboard is slow", "search is broken", "love the new feature"]
-    embeds = embed_texts_local(texts, dim=64)
+    embeds = embed_texts_hashing(texts, dim=64)
     assert embeds.shape == (3, 64)
     # L2 normalised
     norms = np.linalg.norm(embeds, axis=1)
     assert np.allclose(norms, 1.0, atol=1e-6)
+
+
+def test_embed_texts_local_produces_normalised_embeddings():
+    # Doesn't assert a specific dim — MiniLM is 384d, hashing is configurable,
+    # the public contract is only "semantic-ish, row-normalised".
+    texts = ["the dashboard is slow", "search is broken", "love the new feature"]
+    embeds = embed_texts_local(texts)
+    assert embeds.shape[0] == 3
+    norms = np.linalg.norm(embeds, axis=1)
+    assert np.allclose(norms, 1.0, atol=1e-3)
 
 
 def test_cluster_embeddings():
@@ -60,7 +70,7 @@ def test_cluster_embeddings():
         "the app crashes constantly",
         "crash bug on startup",
     ]
-    embeds = embed_texts_local(texts, dim=64)
+    embeds = embed_texts_hashing(texts, dim=64)
     labels, sims, centroids = cluster_embeddings(embeds, n_clusters=2, similarity_threshold=0.0)
     assert len(labels) == 4
     assert centroids.shape[0] == 2

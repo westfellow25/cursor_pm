@@ -129,14 +129,25 @@ def me(user: CurrentUser):
 
 
 @router.get("/system/status", tags=["system"])
-def system_status():
-    """Return info about active LLM provider and feature flags."""
-    from pulse.ml.llm import get_llm_info
+def system_status(verify: bool = False):
+    """Return info about the active LLM + embedding providers and feature flags.
+
+    Pass `?verify=true` to actually ping the LLM provider (1 token round-trip)
+    and report whether the configured API key works.
+    """
+    from pulse.ml.llm import get_llm_info, verify_llm
+    from pulse.ml.embeddings import get_embedding_info
+
+    llm = dict(get_llm_info())
+    if verify:
+        llm["healthy"] = verify_llm()
+    embeddings = get_embedding_info()
     return {
-        "llm": get_llm_info(),
+        "llm": llm,
+        "embeddings": embeddings,
         "features": {
-            "llm_available": get_llm_info()["provider"] != "none",
-            "embeddings_configured": bool(settings.openai_api_key),
+            "llm_configured": llm["provider"] != "none",
+            "embeddings_semantic": embeddings["provider"] in ("openai", "sentence-transformers"),
         },
     }
 
@@ -463,7 +474,7 @@ def cluster_deep_dive(cluster_id: str, db: DB, org_id: CurrentOrgId):
             seen.add(item.text)
             texts.append(item.text)
 
-    from pulse.ml.llm import generate_recommendation, generate_root_cause_analysis
+    from pulse.ml.llm import generate_recommendation, generate_root_cause_analysis, get_llm_info
     recommendation = generate_recommendation(
         cluster.theme, cluster.severity_score, cluster.top_keywords or [], texts,
     )
@@ -471,11 +482,23 @@ def cluster_deep_dive(cluster_id: str, db: DB, org_id: CurrentOrgId):
         cluster.theme, texts, cluster.top_keywords or [],
     )
 
+    provider = get_llm_info()["provider"]
+    if provider == "none":
+        llm_fallback = (
+            "Set ANTHROPIC_API_KEY (preferred) or OPENAI_API_KEY in .env "
+            "to enable AI-powered recommendations."
+        )
+    else:
+        llm_fallback = (
+            f"The configured {provider} call returned no result. "
+            "Check server logs for API errors (invalid key, rate limit, or model name)."
+        )
+
     return {
         "cluster": ClusterResponse.model_validate(cluster),
         "evidence": texts[:5],
-        "recommendation": recommendation or "Enable OpenAI API key for AI-powered recommendations.",
-        "root_cause_analysis": root_causes or "Enable OpenAI API key for root cause analysis.",
+        "recommendation": recommendation or llm_fallback,
+        "root_cause_analysis": root_causes or llm_fallback,
     }
 
 
