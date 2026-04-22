@@ -189,3 +189,41 @@ class ArtifactResponse(BaseModel):
     content: str
     meta: dict[str, Any] = Field(default_factory=dict, serialization_alias="metadata")
     created_at: datetime
+
+
+# ── Single-page report ───────────────────────────────────────────────────────
+
+class ReportOpportunity(BaseModel):
+    """A top-ranked cluster presented for the one-page report."""
+
+    id: str
+    rank: int
+    label: str
+    theme: str
+    summary: str
+    size: int
+    opportunity_score: float
+    severity_score: float
+    sentiment_avg: float | None
+    trend_direction: str
+    top_keywords: list[str]
+    evidence: list[str]
+    recommendation: str | None = None
+    root_cause: str | None = None
+
+
+class ReportResponse(BaseModel):
+    """Everything a PM needs after an analysis run, on one page."""
+
+    run: AnalysisRunResponse
+    headline: str  # "We analysed 55 feedback items..."
+    executive_summary: str  # Claude-written or heuristic paragraph
+    llm_provider: str  # anthropic | openai | none
+    stats: DashboardStats
+    top_opportunities: list[ReportOpportunity]
+    evidence_quotes: list[str]  # top cluster's quotes
+    prd_markdown: str | None
+    jira_markdown: str | None
+    executive_summary_markdown: str | None
+    trends: TrendDataResponse
+    insights: list[InsightResponse]

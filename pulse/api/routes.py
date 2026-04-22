@@ -32,6 +32,8 @@ from pulse.api.schemas import (
     FeedbackSubmit,
     InsightResponse,
     LoginRequest,
+    ReportOpportunity,
+    ReportResponse,
     SignupRequest,
     SourceResponse,
     TokenResponse,
@@ -256,6 +258,268 @@ def get_dashboard(db: DB, org_id: CurrentOrgId):
     )
 
 
+# ── One-page report ──────────────────────────────────────────────────────────
+
+# In-memory cache for expensive per-cluster LLM calls used by the report.
+# Keyed by cluster.id, so invalidates naturally whenever a new analysis run
+# creates new clusters.
+_REPORT_LLM_CACHE: dict[str, dict[str, str]] = {}
+
+
+def _cluster_evidence(db, cluster, limit: int = 5) -> list[str]:
+    """Return up to `limit` distinct feedback quotes from a cluster, ranked by similarity."""
+    members = (
+        db.query(ClusterMember)
+        .filter(ClusterMember.cluster_id == cluster.id)
+        .order_by(desc(ClusterMember.similarity))
+        .limit(limit * 4)
+        .all()
+    )
+    out: list[str] = []
+    seen_sigs: set[str] = set()
+    for m in members:
+        if len(out) >= limit:
+            break
+        item = db.get(FeedbackItem, m.feedback_id)
+        if not item:
+            continue
+        sig = " ".join(item.text.lower().split()[:6])
+        if sig in seen_sigs:
+            continue
+        seen_sigs.add(sig)
+        out.append(item.text)
+    return out
+
+
+def _cluster_deep_dive_cached(db, cluster) -> dict[str, str]:
+    """Fetch (and cache) LLM recommendation + root-cause for a cluster."""
+    cached = _REPORT_LLM_CACHE.get(cluster.id)
+    if cached is not None:
+        return cached
+
+    evidence = _cluster_evidence(db, cluster, limit=8)
+    from pulse.ml.llm import generate_recommendation, generate_root_cause_analysis
+
+    recommendation = generate_recommendation(
+        cluster.theme, cluster.severity_score, cluster.top_keywords or [], evidence,
+    )
+    root_cause = generate_root_cause_analysis(
+        cluster.theme, evidence, cluster.top_keywords or [],
+    )
+    result = {
+        "recommendation": recommendation or "",
+        "root_cause": root_cause or "",
+    }
+    _REPORT_LLM_CACHE[cluster.id] = result
+    return result
+
+
+def _artifact_by_type(db, org_id: str, run_id: str, artifact_type: str) -> Artifact | None:
+    return (
+        db.query(Artifact)
+        .filter(
+            Artifact.org_id == org_id,
+            Artifact.run_id == run_id,
+            Artifact.type == artifact_type,
+        )
+        .order_by(desc(Artifact.created_at))
+        .first()
+    )
+
+
+def _headline(total: int, top_label: str | None, top_size: int) -> str:
+    """Narrative one-liner for the report hero."""
+    if total == 0:
+        return "No feedback ingested yet. Upload a CSV to start."
+    if not top_label:
+        return f"We ingested {total} feedback items — run an analysis to see what they're saying."
+    pct = (top_size / max(1, total)) * 100
+    return (
+        f"We analysed {total} feedback items. The top theme — "
+        f"{top_label} — is mentioned in {top_size} items ({pct:.0f}% of feedback)."
+    )
+
+
+@router.get("/report/latest", response_model=ReportResponse, tags=["report"])
+def get_latest_report(db: DB, org_id: CurrentOrgId):
+    """Single-page report: everything you need after an analysis run.
+
+    Combines stats, top-3 opportunities with quotes and AI recommendations,
+    generated artifacts (PRD / Jira / Executive Summary), trends, and insights.
+    """
+    now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+
+    # Latest completed analysis run
+    latest_run = (
+        db.query(AnalysisRun)
+        .filter(AnalysisRun.org_id == org_id, AnalysisRun.status == "completed")
+        .order_by(desc(AnalysisRun.completed_at))
+        .first()
+    )
+    if not latest_run:
+        raise HTTPException(
+            status_code=404,
+            detail="No completed analysis yet. Upload feedback and run an analysis first.",
+        )
+
+    # ── Stats (same shape as /dashboard so the frontend can reuse the component)
+    total_feedback = (
+        db.query(func.count(FeedbackItem.id))
+        .filter(FeedbackItem.org_id == org_id).scalar() or 0
+    )
+    total_sources = (
+        db.query(func.count(FeedbackSource.id))
+        .filter(FeedbackSource.org_id == org_id).scalar() or 0
+    )
+    feedback_this_week = (
+        db.query(func.count(FeedbackItem.id))
+        .filter(FeedbackItem.org_id == org_id, FeedbackItem.created_at >= week_ago)
+        .scalar() or 0
+    )
+    avg_sentiment = (
+        db.query(func.avg(FeedbackItem.sentiment))
+        .filter(FeedbackItem.org_id == org_id, FeedbackItem.sentiment.isnot(None))
+        .scalar()
+    )
+    unread_insights = (
+        db.query(func.count(Insight.id))
+        .filter(Insight.org_id == org_id, Insight.is_read == False)
+        .scalar() or 0
+    )
+    cat_counts = (
+        db.query(FeedbackItem.category, func.count(FeedbackItem.id))
+        .filter(FeedbackItem.org_id == org_id, FeedbackItem.category.isnot(None))
+        .group_by(FeedbackItem.category)
+        .order_by(func.count(FeedbackItem.id).desc())
+        .first()
+    )
+    top_category = cat_counts[0] if cat_counts else "N/A"
+
+    snapshots = (
+        db.query(TrendSnapshot)
+        .filter(TrendSnapshot.org_id == org_id)
+        .order_by(desc(TrendSnapshot.period_start))
+        .limit(4)
+        .all()
+    )
+    if len(snapshots) >= 2 and snapshots[0].avg_sentiment and snapshots[-1].avg_sentiment:
+        diff = snapshots[0].avg_sentiment - snapshots[-1].avg_sentiment
+        sentiment_trend = (
+            "improving" if diff > 0.05 else "declining" if diff < -0.05 else "stable"
+        )
+    else:
+        sentiment_trend = "stable"
+
+    stats = DashboardStats(
+        total_feedback=total_feedback,
+        total_sources=total_sources,
+        active_clusters=latest_run.cluster_count,
+        avg_sentiment=round(avg_sentiment, 3) if avg_sentiment else None,
+        unread_insights=unread_insights,
+        top_category=top_category,
+        feedback_this_week=feedback_this_week,
+        sentiment_trend=sentiment_trend,
+    )
+
+    # ── Top-3 opportunities with evidence + AI recommendation
+    top_clusters = (
+        db.query(Cluster)
+        .filter(Cluster.run_id == latest_run.id)
+        .order_by(desc(Cluster.opportunity_score))
+        .limit(3)
+        .all()
+    )
+
+    opportunities: list[ReportOpportunity] = []
+    for rank, cluster in enumerate(top_clusters, start=1):
+        evidence = _cluster_evidence(db, cluster, limit=5)
+        deep = _cluster_deep_dive_cached(db, cluster)
+        opportunities.append(ReportOpportunity(
+            id=cluster.id,
+            rank=rank,
+            label=cluster.label,
+            theme=cluster.theme,
+            summary=cluster.summary,
+            size=cluster.size,
+            opportunity_score=cluster.opportunity_score,
+            severity_score=cluster.severity_score,
+            sentiment_avg=cluster.sentiment_avg,
+            trend_direction=cluster.trend_direction,
+            top_keywords=cluster.top_keywords or [],
+            evidence=evidence,
+            recommendation=deep["recommendation"] or None,
+            root_cause=deep["root_cause"] or None,
+        ))
+
+    # ── Trends + insights
+    trend_data = get_trend_data(db, org_id, weeks=12)
+    trends = TrendDataResponse(
+        volume=[TrendPoint(**t) for t in trend_data["volume"]],
+        sentiment=[TrendPoint(**t) for t in trend_data["sentiment"]],
+        categories=trend_data["categories"],
+    )
+    insights_raw = get_insights(db, org_id, limit=8)
+    insights = [InsightResponse.model_validate(i) for i in insights_raw]
+
+    # ── Artifacts (markdown bodies, inline)
+    prd_art = _artifact_by_type(db, org_id, latest_run.id, "prd")
+    jira_art = _artifact_by_type(db, org_id, latest_run.id, "jira_tickets")
+    exec_art = _artifact_by_type(db, org_id, latest_run.id, "executive_summary")
+
+    # ── Hero narrative
+    top_label = opportunities[0].label if opportunities else None
+    top_size = opportunities[0].size if opportunities else 0
+    headline = _headline(total_feedback, top_label, top_size)
+
+    # Prefer the LLM-written exec summary; fall back to a terse built-in.
+    if exec_art and exec_art.content:
+        # Pull the first real prose paragraph (not a header, metadata line, or
+        # separator). Heuristic: skip anything that starts with `#`, `---`,
+        # `|`, or looks like `**Key**: value` metadata.
+        paragraphs = [p.strip() for p in exec_art.content.split("\n\n") if p.strip()]
+        def _is_prose(p: str) -> bool:
+            if p.startswith(("#", "---", "|", "-")):
+                return False
+            # Metadata lines like "**Generated**: ...\n**Period**: ..."
+            lines = p.splitlines()
+            if all(line.startswith("**") and ":" in line for line in lines if line):
+                return False
+            return len(p) > 60
+        exec_summary_hero = next(
+            (p for p in paragraphs if _is_prose(p)),
+            headline,
+        )[:600]
+    elif opportunities:
+        top = opportunities[0]
+        exec_summary_hero = (
+            f"Your customers' loudest pain point right now is \"{top.label}\" "
+            f"— {top.size} feedback items, sentiment {top.sentiment_avg or 0:.2f}, "
+            f"opportunity score {top.opportunity_score}/10. "
+            "Scroll down for evidence and the auto-generated PRD + Jira breakdown."
+        )
+    else:
+        exec_summary_hero = headline
+
+    from pulse.ml.llm import get_llm_info
+    llm_provider = get_llm_info()["provider"]
+
+    return ReportResponse(
+        run=AnalysisRunResponse.model_validate(latest_run),
+        headline=headline,
+        executive_summary=exec_summary_hero,
+        llm_provider=llm_provider,
+        stats=stats,
+        top_opportunities=opportunities,
+        evidence_quotes=opportunities[0].evidence if opportunities else [],
+        prd_markdown=prd_art.content if prd_art else None,
+        jira_markdown=jira_art.content if jira_art else None,
+        executive_summary_markdown=exec_art.content if exec_art else None,
+        trends=trends,
+        insights=insights,
+    )
+
+
 # ── Feedback ──────────────────────────────────────────────────────────────────
 
 
@@ -398,6 +662,10 @@ def trigger_analysis(
         compute_weekly_snapshots(db, org_id, weeks=12)
         # Detect anomalies
         detect_anomalies(db, org_id)
+        # New analysis → invalidate any cached deep-dive LLM results from the
+        # previous run. Cluster IDs are UUIDs so stale entries would never be
+        # hit, but we clear to keep memory bounded.
+        _REPORT_LLM_CACHE.clear()
 
     return AnalysisRunResponse.model_validate(analysis_run)
 

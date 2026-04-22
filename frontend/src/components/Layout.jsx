@@ -14,7 +14,7 @@ import {
 import { api } from '../api/client'
 
 const NAV = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/', icon: LayoutDashboard, label: 'Report' },
   { to: '/feedback', icon: MessageSquare, label: 'Feedback' },
   { to: '/insights', icon: Lightbulb, label: 'Insights' },
   { to: '/trends', icon: TrendingUp, label: 'Trends' },

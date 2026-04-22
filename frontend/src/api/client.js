@@ -55,6 +55,7 @@ export const api = {
   latestAnalysis: () => request('/analysis/latest'),
   analysisRuns: () => request('/analysis/runs'),
   clusterDeepDive: (id) => request(`/analysis/cluster/${id}/deep-dive`),
+  latestReport: () => request('/report/latest'),
 
   // Insights
   listInsights: (params = {}) => {
