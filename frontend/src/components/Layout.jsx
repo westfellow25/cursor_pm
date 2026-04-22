@@ -10,6 +10,7 @@ import {
   LogOut,
   Zap,
   Brain,
+  BookOpen,
 } from 'lucide-react'
 import { api } from '../api/client'
 
@@ -20,6 +21,7 @@ const NAV = [
   { to: '/trends', icon: TrendingUp, label: 'Trends' },
   { to: '/artifacts', icon: FileText, label: 'Artifacts' },
   { to: '/integrations', icon: Plug, label: 'Integrations' },
+  { to: '/how-it-works', icon: BookOpen, label: 'How it works' },
 ]
 
 const PROVIDER_LABELS = {

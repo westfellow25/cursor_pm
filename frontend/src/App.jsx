@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import ReportPage from './pages/ReportPage'
+import HowItWorksPage from './pages/HowItWorksPage'
 import DashboardPage from './pages/DashboardPage'
 import FeedbackPage from './pages/FeedbackPage'
 import InsightsPage from './pages/InsightsPage'
@@ -43,6 +44,7 @@ export default function App() {
     <Layout user={user} onLogout={() => { localStorage.removeItem('pulse_token'); setUser(null) }}>
       <Routes>
         <Route path="/" element={<ReportPage />} />
+        <Route path="/how-it-works" element={<HowItWorksPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/feedback" element={<FeedbackPage />} />
         <Route path="/insights" element={<InsightsPage />} />
