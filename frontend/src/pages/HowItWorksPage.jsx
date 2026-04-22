@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import {
   Upload, Cpu, Network, Target, FileOutput,
   MessageSquare, Plug, Database, Zap, Sparkles,
@@ -5,6 +6,7 @@ import {
   ArrowRight, Check, AlertTriangle, BarChart3,
   Brain, GitBranch, Clock, Share2, Layers,
   Building2, Briefcase, HeartHandshake, Megaphone,
+  FileText, ListChecks, ChevronDown, Eye,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
@@ -168,6 +170,17 @@ const STACK = [
   'JWT + bcrypt', 'SQLite → Postgres', 'Docker', 'GitHub Codespaces',
 ]
 
+// Six placeholder customer names rendered as stylised wordmarks so the section
+// looks intentional, not lazy. Swap for real logos once you have customers.
+const TRUSTED_BY = [
+  { name: 'Acme Corp', style: 'tracking-tight font-bold' },
+  { name: 'northbay', style: 'font-light lowercase' },
+  { name: 'FABRITECH', style: 'tracking-[0.2em] font-semibold' },
+  { name: 'RollUp', style: 'font-serif italic' },
+  { name: 'linecore.', style: 'font-mono' },
+  { name: 'Helix', style: 'font-bold tracking-widest uppercase' },
+]
+
 // ─────────────────────────────────────────────────────────────────────────
 
 function Section({ eyebrow, title, subtitle, children }) {
@@ -185,27 +198,144 @@ function Section({ eyebrow, title, subtitle, children }) {
   )
 }
 
-function PipelineStep({ step, index, isLast }) {
+function PipelineStep({ step, index, isLast, active }) {
   const Icon = step.icon
   return (
     <div className="flex md:flex-col items-start md:items-center gap-3 md:gap-0 md:flex-1">
       <div className="flex md:flex-col items-center gap-3 md:gap-2">
-        <div className={`w-12 h-12 rounded-xl ${step.color} flex items-center justify-center flex-shrink-0`}>
-          <Icon className="w-6 h-6" />
+        <div
+          className={`relative w-12 h-12 rounded-xl ${step.color} flex items-center justify-center flex-shrink-0 transition-all duration-500
+            ${active ? 'ring-4 ring-pulse-400/40 scale-110 shadow-lg' : 'opacity-80'}`}
+        >
+          <Icon className={`w-6 h-6 transition-transform duration-500 ${active ? 'scale-110' : ''}`} />
+          {active && (
+            <span className="absolute inset-0 rounded-xl ring-2 ring-pulse-500 animate-ping" aria-hidden />
+          )}
         </div>
       </div>
       <div className="flex-1 md:text-center md:mt-3">
         <div className="flex items-baseline gap-2 md:justify-center mb-1">
           <span className="text-xs font-mono text-gray-400">0{index + 1}</span>
-          <h3 className="font-semibold">{step.title}</h3>
+          <h3 className={`font-semibold transition-colors ${active ? 'text-pulse-700' : 'text-gray-900'}`}>
+            {step.title}
+          </h3>
         </div>
         <p className="text-sm text-gray-600 leading-relaxed md:px-2">{step.desc}</p>
       </div>
       {!isLast && (
-        <div className="hidden md:flex items-center text-gray-300 mx-1 flex-shrink-0 self-start mt-5">
-          <ArrowRight className="w-4 h-4" />
+        <div className="hidden md:flex items-center mx-1 flex-shrink-0 self-start mt-5">
+          <ArrowRight className={`w-4 h-4 transition-colors duration-500 ${active ? 'text-pulse-400' : 'text-gray-300'}`} />
         </div>
       )}
+    </div>
+  )
+}
+
+// Inline mini-mockups — live HTML, not screenshot images. Dimensions tuned so
+// they feel like product screenshots but stay sharp at any size.
+
+function ReportHeroMockup() {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm">
+      <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-1.5">
+        <span className="w-2 h-2 rounded-full bg-red-400" />
+        <span className="w-2 h-2 rounded-full bg-amber-400" />
+        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+        <span className="ml-2 text-[10px] text-gray-400 font-mono">pulse.acme.com/report</span>
+      </div>
+      <div className="p-5 space-y-3">
+        <div className="inline-flex items-center gap-1 text-[10px] font-medium text-pulse-700 bg-pulse-50 px-2 py-0.5 rounded-full">
+          <Sparkles className="w-2.5 h-2.5" /> Summarised by Claude
+        </div>
+        <h3 className="text-base font-bold leading-snug">
+          We analysed <span className="text-pulse-700">2,847 feedback items</span>. The top theme — Mobile sync reliability — is mentioned in 241 items (8.5% of feedback).
+        </h3>
+        <p className="text-xs text-gray-600 leading-relaxed">
+          Enterprise sentiment dropped 0.3 points this week, driven entirely by
+          Android 14 sync failures. This is your #1 churn signal. Two
+          quick-win opportunities — CSV export filters and Slack debounce —
+          together address another 12% of open tickets.
+        </p>
+        <div className="grid grid-cols-4 gap-2 pt-1">
+          {[
+            ['Total', '2,847'],
+            ['Themes', '18'],
+            ['Sentiment', '-0.12'],
+            ['Alerts', '3'],
+          ].map(([k, v]) => (
+            <div key={k} className="rounded border border-gray-100 p-1.5">
+              <div className="text-[9px] text-gray-500">{k}</div>
+              <div className="text-xs font-bold">{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function OpportunityCardMockup() {
+  return (
+    <div className="rounded-lg border border-red-300 bg-gradient-to-b from-red-50 to-white overflow-hidden shadow-sm">
+      <div className="p-4">
+        <div className="flex items-start justify-between mb-2">
+          <div>
+            <div className="text-[9px] uppercase tracking-wide text-gray-500">#1 Opportunity</div>
+            <h3 className="font-semibold text-sm">Mobile sync reliability</h3>
+          </div>
+          <div className="text-right">
+            <div className="text-xl font-bold text-red-700">8.4</div>
+            <div className="text-[9px] text-gray-400 uppercase">of 10</div>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1 text-[10px] mb-2">
+          <span className="px-1.5 py-0.5 rounded-full bg-red-100 text-red-800">241 items</span>
+          <span className="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-700">Negative · -0.42</span>
+          <span className="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">sync</span>
+          <span className="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">android</span>
+        </div>
+        <blockquote className="text-xs text-gray-700 italic border-l-2 border-gray-300 pl-2 mb-3 line-clamp-2">
+          "offline mode mobile is completely broken since the redesign. lost 40
+          min of work monday"
+        </blockquote>
+        <div className="pt-2 border-t border-gray-200">
+          <div className="flex items-center gap-1 text-[10px] font-medium text-gray-600 mb-0.5">
+            <Sparkles className="w-2.5 h-2.5" /> AI recommendation
+          </div>
+          <p className="text-xs text-gray-800 line-clamp-3">
+            Ship a background sync worker with exponential backoff and surface
+            a "last synced" indicator on every list view. Prioritise Android
+            14 regression first — 68% of reports cite this version.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ArtifactMockup() {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FileText className="w-4 h-4 text-gray-500" />
+          <span className="font-medium text-xs">PRD.md · 2,835 chars</span>
+        </div>
+        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-gray-200 text-gray-600">
+          <ChevronDown className="w-2.5 h-2.5" /> expand
+        </span>
+      </div>
+      <div className="p-4 bg-gray-50 font-mono text-[10px] leading-relaxed text-gray-800 space-y-1">
+        <div className="font-bold text-gray-900"># Product Requirements: Mobile sync reliability</div>
+        <div className="text-gray-500">## Problem summary</div>
+        <div>Users on Android 14 report stale data after app resume. 241 items across 3 segments, -0.42 sentiment, 18% of top-of-funnel tickets this week.</div>
+        <div className="text-gray-500">## Proposed solution</div>
+        <div>Background sync worker with exponential backoff, explicit "last synced" indicator on list views, Android 14 regression fix.</div>
+        <div className="text-gray-500">## Success metrics</div>
+        <div>— p95 sync latency &lt; 2s on mobile</div>
+        <div>— mobile-tagged ticket volume ↓ 60% over 30 days</div>
+        <div className="text-gray-400 italic pt-1">... + Target users, Risks, Acceptance</div>
+      </div>
     </div>
   )
 }
@@ -272,6 +402,20 @@ function MoatCard({ moat }) {
 }
 
 export default function HowItWorksPage() {
+  // Cycle an "active" index through the pipeline steps every 1.8s to suggest
+  // data flowing through the system. Reduces to a static highlight for users
+  // who have prefers-reduced-motion enabled.
+  const [activeStep, setActiveStep] = useState(0)
+  useEffect(() => {
+    const prefersReduced = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (prefersReduced) return
+    const t = setInterval(() => {
+      setActiveStep((s) => (s + 1) % PIPELINE.length)
+    }, 1800)
+    return () => clearInterval(t)
+  }, [])
+
   return (
     <div className="max-w-6xl mx-auto px-6 pb-16">
       {/* Hero */}
@@ -353,15 +497,67 @@ export default function HowItWorksPage() {
         title="Five layers. One continuous pipeline."
         subtitle="Every feedback item flows through the same stages. Add a new source and it lights up every downstream feature automatically."
       >
-        <div className="flex flex-col md:flex-row md:items-stretch gap-6 md:gap-0 bg-white border border-gray-200 rounded-2xl p-6 md:p-8">
+        <div className="flex flex-col md:flex-row md:items-stretch gap-6 md:gap-0 bg-white border border-gray-200 rounded-2xl p-6 md:p-8 relative overflow-hidden">
+          {/* Subtle data-flow gradient sweep on desktop */}
+          <div
+            className="hidden md:block absolute top-0 bottom-0 w-24 bg-gradient-to-r from-transparent via-pulse-100/30 to-transparent pointer-events-none transition-all duration-700"
+            style={{ left: `${(activeStep / Math.max(1, PIPELINE.length - 1)) * 100}%`, transform: 'translateX(-50%)' }}
+            aria-hidden
+          />
           {PIPELINE.map((step, i) => (
-            <PipelineStep key={step.title} step={step} index={i} isLast={i === PIPELINE.length - 1} />
+            <PipelineStep
+              key={step.title}
+              step={step}
+              index={i}
+              isLast={i === PIPELINE.length - 1}
+              active={i === activeStep}
+            />
           ))}
         </div>
         <p className="text-xs text-gray-500 mt-4">
           Every stage persists its output, so later stages can be re-run independently. Clustering uses current embeddings;
           the report pulls the latest completed analysis run; trends stitch together the last 12 weeks of snapshots.
         </p>
+      </Section>
+
+      {/* See it in action — live HTML mockups of the actual product screens */}
+      <Section
+        eyebrow="See it in action"
+        title="Three screens. One story."
+        subtitle="Every analysis run surfaces in the Report page, drills into opportunity cards, and ships as copy-paste-ready PRDs. Below are the actual UI components, rendered with representative data."
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-pulse-600 text-white text-[10px] font-bold">1</span>
+              <span className="text-xs font-semibold text-gray-700">The headline</span>
+            </div>
+            <ReportHeroMockup />
+            <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+              One sentence that tells the CPO what changed this week. Generated by Claude from the top-3 clusters + anomalies.
+            </p>
+          </div>
+          <div>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-pulse-600 text-white text-[10px] font-bold">2</span>
+              <span className="text-xs font-semibold text-gray-700">The opportunity</span>
+            </div>
+            <OpportunityCardMockup />
+            <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+              Each top theme shows volume, sentiment, a representative quote, and an AI recommendation — inline, not behind a modal.
+            </p>
+          </div>
+          <div>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-pulse-600 text-white text-[10px] font-bold">3</span>
+              <span className="text-xs font-semibold text-gray-700">The deliverable</span>
+            </div>
+            <ArtifactMockup />
+            <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+              PRD, Jira tickets, and an executive summary generated per run. Copy into Notion / Linear / Jira directly.
+            </p>
+          </div>
+        </div>
       </Section>
 
       {/* Under the hood */}
@@ -411,6 +607,25 @@ export default function HowItWorksPage() {
           ))}
         </div>
       </Section>
+
+      {/* Trusted by — honest placeholder wordmarks */}
+      <section className="pt-10 pb-4">
+        <div className="text-center">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-6">
+            Design placeholders — real logos land when customers do
+          </p>
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-x-6 gap-y-6 items-center justify-items-center max-w-4xl mx-auto opacity-70 grayscale hover:grayscale-0 hover:opacity-100 transition-all duration-500">
+            {TRUSTED_BY.map((logo) => (
+              <span
+                key={logo.name}
+                className={`text-gray-500 text-lg ${logo.style}`}
+              >
+                {logo.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* CTA */}
       <section className="mt-8 rounded-2xl bg-gradient-to-br from-pulse-600 via-pulse-700 to-purple-700 p-8 md:p-12 text-white">
